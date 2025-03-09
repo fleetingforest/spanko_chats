@@ -57,6 +57,7 @@ if user_input and (send_clicked or user_input != st.session_state.get("last_inpu
     st.session_state.conversation.append({"role": "user", "content": user_input})
 
     st.session_state["last_input"] = user_input
+    st.session_state["input"] = ""
     display_messages()
     
     # **Show "Mommy is typing..." immediately** to make the UI feel faster
