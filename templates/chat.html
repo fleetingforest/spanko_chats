@@ -3,16 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat with Mommy</title>
+    <title>Chat with AI Personas</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="chat-container">
-        <div id="chat-box" class="chat-box">
+        <h1>Chat with AI Personas</h1>
+
+        <!-- Persona Selection -->
+        <div class="persona-section">
+            <label for="persona-select">Choose a persona:</label>
+            <select id="persona-select">
+                {% for persona in personas %}
+                    <option value="{{ persona }}">{{ persona }}</option>
+                {% endfor %}
+            </select>
+            <button onclick="setPersona()">Switch Persona</button>
+        </div>
+
+        <!-- Scenario Input -->
+        <div class="scenario-section">
+            <label for="scenario-input">Set the scenario:</label>
+            <input type="text" id="scenario-input" placeholder="Enter scenario details...">
+            <button onclick="setScenario()">Set Scenario</button>
+            <button onclick="clearChat()">Clear Chat</button>
+        </div>
+
+        <!-- Chat Display -->
+        <div id="chat-box">
             {% for msg in messages %}
-                <p class="message">{{ msg }}</p>
+                <div class="{{ 'user-message' if msg.role == 'user' else 'ai-message' }}">
+                    {{ "You" if msg.role == 'user' else "Daddy" }}: {{ msg.content }}
+                </div>
             {% endfor %}
         </div>
+
+        <!-- Message Input -->
         <input type="text" id="message-input" placeholder="Type your message...">
         <button onclick="sendMessage()">Send</button>
     </div>
