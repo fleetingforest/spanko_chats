@@ -28,9 +28,6 @@ if st.session_state.scenario and not st.session_state.conversation:
 # --- CHAT DISPLAY OPTIMIZATION ---
 chat_container = st.empty()  # Placeholder for chat history
 
-def clear_input():
-    st.session_state["input_default"] = ""
-
 def display_messages():
     """Quickly update chat messages without rerunning the whole script."""
     with chat_container.container():
@@ -47,13 +44,9 @@ def display_messages():
 # **🚀 Display messages immediately BEFORE user input**
 display_messages()
 
-# Store a default value for input
-if "input_default" not in st.session_state:
-    st.session_state["input_default"] = ""
-
 # --- INPUT BOX AND SEND BUTTON ---
 
-user_input = st.text_input("You:", key="input", value=st.session_state["input_default"])
+user_input = st.text_input("You:", key="input")
 send_clicked = st.button("Send")
 
 # **🚀 Ensure text input updates properly on Send button click**
@@ -65,7 +58,6 @@ if user_input and (send_clicked or user_input != st.session_state.get("last_inpu
     st.session_state.conversation.append({"role": "user", "content": user_input})
 
     st.session_state["last_input"] = user_input
-    clear_input()
     display_messages()
     
     # **Show "Mommy is typing..." immediately** to make the UI feel faster
