@@ -1,3 +1,6 @@
+// Track the active persona separately from the dropdown selection
+let activePersona = "Daddy"; // Default to match the server's default
+
 function sendMessage() {
     let input = document.getElementById("message-input");
     let message = input.value.trim();
@@ -13,7 +16,7 @@ function sendMessage() {
 
     let typingDiv = document.createElement("div");
     typingDiv.className = "ai-message";
-    typingDiv.textContent = getCurrentPersona() + ": " + getCurrentPersona() + " is typing...";
+    typingDiv.textContent = activePersona + ": " + activePersona + " is typing...";
     chatBox.appendChild(typingDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -32,13 +35,17 @@ function sendMessage() {
         console.log(data.status);
         chatBox.removeChild(typingDiv);
         updateChat(data.conversation);
+        // Check if the server included the current persona in response
+        if (data.current_persona) {
+            activePersona = data.current_persona;
+        }
     })
     .catch(error => {
         console.error("Error:", error);
         chatBox.removeChild(typingDiv);
         let errorDiv = document.createElement("div");
         errorDiv.className = "ai-message";
-        errorDiv.textContent = getCurrentPersona() + ": Oops, something went wrong!";
+        errorDiv.textContent = activePersona + ": Oops, something went wrong!";
         chatBox.appendChild(errorDiv);
         chatBox.scrollTop = chatBox.scrollHeight;
     });
@@ -76,6 +83,10 @@ function setPersona() {
     .then(response => response.json())
     .then(data => {
         console.log(data.status);
+        // Only update the active persona when the server confirms the change
+        if (data.current_persona) {
+            activePersona = data.current_persona;
+        }
         updateChat(data.conversation); // Update chat with cleared conversation
     })
     .catch(error => console.error("Error setting persona:", error));
@@ -97,6 +108,10 @@ function clearChat() {
     .then(data => {
         console.log("Server response:", data.status);
         updateChat(data.conversation);
+        // Check if server sent current persona
+        if (data.current_persona) {
+            activePersona = data.current_persona;
+        }
         document.getElementById("scenario-input").value = "";
         console.log("Chat cleared and input reset");
     })
@@ -123,17 +138,18 @@ function updateChat(conversation) {
                 return `<i>${capitalized}</i>`;
             })
             .replace(/\n/g, "<br>");
-        messageDiv.innerHTML = (msg.role === "user" ? "You" : getCurrentPersona()) + ": " + formattedContent;
+        messageDiv.innerHTML = (msg.role === "user" ? "You" : activePersona) + ": " + formattedContent;
         chatBox.appendChild(messageDiv);
     });
 
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-function getCurrentPersona() {
-    let select = document.getElementById("persona-select");
-    return select.value || "Daddy"; // Default to Daddy if not set
-}
+// No longer needed since we're using the activePersona variable directly
+// function getCurrentPersona() {
+//     let select = document.getElementById("persona-select");
+//     return select.value || "Daddy"; // Default to Daddy if not set
+// }
 
 // Add event listeners
 document.getElementById("message-input").addEventListener("keypress", function(event) {
@@ -146,4 +162,10 @@ document.getElementById("scenario-input").addEventListener("keypress", function(
     if (event.key === "Enter") {
         setScenario();
     }
+});
+
+// You might want to add this to synchronize on page load
+window.addEventListener('DOMContentLoaded', (event) => {
+    // Set the dropdown to match the active persona on load
+    document.getElementById("persona-select").value = activePersona;
 });
