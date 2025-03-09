@@ -29,7 +29,7 @@ if st.session_state.scenario and not st.session_state.conversation:
 chat_container = st.empty()  # Placeholder for chat history
 
 def clear_input():
-    st.session_state["input"] = ""
+    st.session_state["input_default"] = ""
 
 def display_messages():
     """Quickly update chat messages without rerunning the whole script."""
@@ -47,8 +47,13 @@ def display_messages():
 # **🚀 Display messages immediately BEFORE user input**
 display_messages()
 
+# Store a default value for input
+if "input_default" not in st.session_state:
+    st.session_state["input_default"] = ""
+
 # --- INPUT BOX AND SEND BUTTON ---
-user_input = st.text_input("You:", key="input")
+
+user_input = st.text_input("You:", key="input", value=st.session_state["input_default"])
 send_clicked = st.button("Send")
 
 # **🚀 Ensure text input updates properly on Send button click**
