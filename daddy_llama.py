@@ -77,7 +77,6 @@ if user_input and (send_clicked or user_input != st.session_state.get("last_inpu
 
     # Store last input to prevent duplicate sends
     st.session_state["last_input"] = user_input
-    st.session_state["input"] = ""
 
 
     # **🚀 Refresh chat instantly**
