@@ -19,13 +19,13 @@ function sendMessage() {
     let chatBox = document.getElementById("chat-box");
     let userDiv = document.createElement("div");
     userDiv.className = "user-message";
-    userDiv.textContent = userName + ": " + message;
+    userDiv.textContent = userName + ": " + message;  // Use userName here
     chatBox.appendChild(userDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
 
     let typingDiv = document.createElement("div");
     typingDiv.className = "ai-message";
-    typingDiv.textContent = activePersona + ": " + activePersona + " is typing...";
+    typingDiv.textContent = activePersona + " is typing...";
     chatBox.appendChild(typingDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -158,7 +158,7 @@ function updateChat(conversation) {
                 return `<i>${capitalized}</i>`;
             })
             .replace(/\n/g, "<br>");
-        messageDiv.innerHTML = (msg.role === "user" ? userName : activePersona) + ": " + formattedContent;
+        messageDiv.innerHTML = formattedContent;  // Remove userName and activePersona here
         chatBox.appendChild(messageDiv);
     });
 
@@ -181,6 +181,13 @@ document.getElementById("scenario-input").addEventListener("keypress", function(
 document.getElementById("name-form").addEventListener("submit", function(event) {
     event.preventDefault(); // Prevent form submission
     setName();
+});
+
+// Add event listener for name input
+document.getElementById("name-input").addEventListener("keypress", function(event) {
+    if (event.key === "Enter") {
+        setName();
+    }
 });
 
 // You might want to add this to synchronize on page load

@@ -39,8 +39,10 @@
 
         <!-- Name Input -->
         <div class="name-section" id="name-section">
-            <input type="text" id="name-input" placeholder="Enter your name" required>
-            <button onclick="setName()">Set Name</button>
+            <form id="name-form" onsubmit="setName(); return false;">
+                <input type="text" id="name-input" placeholder="Enter your name" required>
+                <button type="submit">Set Name</button>
+            </form>
         </div>
 
         <!-- Message Input -->
