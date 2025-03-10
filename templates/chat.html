@@ -49,8 +49,11 @@
         <input type="text" id="message-input" placeholder="Type your message...">
         <button onclick="sendMessage()">Send</button>
 
-        <!-- Clear Chat Button -->
-        <button id="clear-chat-button" onclick="clearChat()" style="display: none;">Clear Chat</button>
+        <!-- Button Container -->
+        <div class="button-container">
+            <button id="voice-chat-button" onclick="toggleVoiceChat()">Switch to Voice Responses</button>
+            <button id="clear-chat-button" onclick="clearChat()" style="display: none;">Clear Chat</button>
+        </div>
     </div>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>

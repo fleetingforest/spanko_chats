@@ -1,5 +1,10 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, send_file, url_for
+import openai_tts_test  # Import the TTS script
 from openai import OpenAI
+import os
+import threading
+import time
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"  # Required for session
@@ -74,17 +79,19 @@ PERSONAS = {
 
 
 
-# Store conversation and current persona
+# Store conversation, current persona, and voice chat status
 conversation = [{"role": "system", "content": PERSONAS["Daddy"].format("")}]  # Default to Daddy
 current_persona = "Daddy"
 scenario = ""
+voice_chat_enabled = False
 
 @app.route("/")
 def index():
-    global conversation, current_persona, scenario
+    global conversation, current_persona, scenario, voice_chat_enabled
     # Reset conversation and scenario on page load, keep current persona
     conversation = [{"role": "system", "content": PERSONAS[current_persona].format("")}]
     scenario = ""
+    voice_chat_enabled = False
     print("Conversation reset on page load with persona:", current_persona)
     return render_template("chat.html", messages=conversation[1:], personas=list(PERSONAS.keys()), current_persona=current_persona)
 
@@ -118,9 +125,15 @@ def set_scenario():
         "current_persona": current_persona
     })
 
+@app.route("/toggle_voice_chat", methods=["POST"])
+def toggle_voice_chat():
+    global voice_chat_enabled
+    voice_chat_enabled = not voice_chat_enabled
+    return jsonify({"voice_chat_enabled": voice_chat_enabled})
+
 @app.route("/send", methods=["POST"])
 def send_message():
-    global conversation, current_persona
+    global conversation, current_persona, voice_chat_enabled
     user_message = request.json.get("message")
     user_name = request.json.get("user_name", "You")
     if not user_message:
@@ -143,11 +156,21 @@ def send_message():
     ai_response = ai_response.replace(". ", ".\n").replace("! ", "!\n")
     conversation.append({"role": "assistant", "content": ai_response})
 
-    # Return the updated conversation (excluding system prompt) and current persona
+    # Convert AI response to audio if voice chat is enabled
+    audio_url = None
+    if voice_chat_enabled:
+        try:
+            audio_file_path = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
+            audio_url = url_for('static', filename=os.path.basename(audio_file_path))
+        except Exception as e:
+            app.logger.error(f"Error converting text to audio: {e}")
+
+    # Return the updated conversation (excluding system prompt), current persona, and audio URL
     return jsonify({
         "status": "Message received!", 
         "conversation": conversation[1:],
-        "current_persona": current_persona
+        "current_persona": current_persona,
+        "audio_url": audio_url
     })
 
 @app.route("/clear", methods=["POST"])
@@ -170,5 +193,44 @@ def get_current_persona():
         "current_persona": current_persona
     })
 
+@app.route("/convert_to_audio", methods=["POST"])
+def convert_to_audio():
+    # Find the last AI message in the conversation
+    last_ai_message = None
+    for message in reversed(conversation):
+        if message["role"] == "assistant":
+            last_ai_message = message["content"]
+            break
+
+    if not last_ai_message:
+        app.logger.error("No AI message found to convert")
+        return jsonify({"status": "No AI message found to convert"}), 400
+
+    app.logger.info(f"Converting AI message to audio: {last_ai_message}")
+
+    # Call the TTS function and get the audio file path
+    try:
+        audio_file_path = openai_tts_test.convert_text_to_audio(last_ai_message, current_persona)
+        app.logger.info(f"Audio file created at: {audio_file_path}")
+        return send_file(audio_file_path, mimetype="audio/mpeg")
+    except Exception as e:
+        app.logger.error(f"Error converting text to audio: {e}")
+        return jsonify({"status": "Error converting text to audio"}), 500
+
+def delete_old_audio_files():
+    while True:
+        now = datetime.now()
+        cutoff = now - timedelta(minutes=30)
+        static_dir = os.path.join(os.path.dirname(__file__), 'static')
+        for filename in os.listdir(static_dir):
+            if filename.startswith("openai_output_") and filename.endswith(".mp3"):
+                file_path = os.path.join(static_dir, filename)
+                file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                if file_time < cutoff:
+                    os.remove(file_path)
+                    app.logger.info(f"Deleted old audio file: {file_path}")
+        time.sleep(600)  # Check every 10 minutes
+
 if __name__ == "__main__":
+    threading.Thread(target=delete_old_audio_files, daemon=True).start()
     app.run(debug=True)

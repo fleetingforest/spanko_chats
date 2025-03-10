@@ -40,6 +40,17 @@ body {
     text-align: left;
 }
 
+.ai-message audio {
+    width: 100%;
+    margin-top: 10px;
+}
+
+.button-container {
+    display: flex;
+    align-items: center;
+    margin-top: 10px;
+}
+
 button {
     background: #007bff;
     color: white;
@@ -47,7 +58,7 @@ button {
     padding: 10px 15px;
     cursor: pointer;
     border-radius: 5px;
-    margin: 5px 5px 5px 0;
+    margin-right: 10px; /* Adjusted margin */
 }
 
 button:hover {

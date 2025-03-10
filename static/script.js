@@ -1,6 +1,7 @@
 // Track the active persona separately from the dropdown selection
 let activePersona = "Daddy"; // Default to match the server's default
 let userName = "You"; // Default user name
+let voiceChatEnabled = false;
 
 function setName() {
     let nameInput = document.getElementById("name-input");
@@ -25,7 +26,7 @@ function sendMessage() {
 
     let typingDiv = document.createElement("div");
     typingDiv.className = "ai-message";
-    typingDiv.textContent = activePersona + " is typing...";
+    typingDiv.textContent = activePersona + (voiceChatEnabled ? " is preparing to speak..." : " is typing...");
     chatBox.appendChild(typingDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -46,7 +47,18 @@ function sendMessage() {
     .then(data => {
         console.log(data.status);
         chatBox.removeChild(typingDiv);
-        updateChat(data.conversation);
+        if (voiceChatEnabled && data.audio_url) {
+            // Add audio control element
+            let audioDiv = document.createElement("div");
+            audioDiv.className = "ai-message";
+            let audioControl = document.createElement("audio");
+            audioControl.controls = true;
+            audioControl.src = data.audio_url;
+            audioDiv.appendChild(audioControl);
+            chatBox.appendChild(audioDiv);
+        } else {
+            updateChat(data.conversation);
+        }
         // Check if the server included the current persona in response
         if (data.current_persona) {
             activePersona = data.current_persona;
@@ -160,9 +172,75 @@ function updateChat(conversation) {
             .replace(/\n/g, "<br>");
         messageDiv.innerHTML = formattedContent;  // Remove userName and activePersona here
         chatBox.appendChild(messageDiv);
+
+        // Add audio control element if voice chat is enabled and audio URL is present
+        if (voiceChatEnabled && msg.audio_url) {
+            let audioDiv = document.createElement("div");
+            audioDiv.className = "ai-message";
+            let audioControl = document.createElement("audio");
+            audioControl.controls = true;
+            audioControl.src = msg.audio_url;
+            audioDiv.appendChild(audioControl);
+            chatBox.appendChild(audioDiv);
+        }
     });
 
     chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function convertToAudio() {
+    console.log("Requesting conversion of the last AI message to audio");
+
+    fetch("/convert_to_audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        console.log("Audio conversion successful");
+        const url = window.URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.play();
+    })
+    .catch(error => {
+        console.error("Error converting text to audio:", error);
+    });
+}
+
+function toggleVoiceChat() {
+    fetch("/toggle_voice_chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+    })
+    .then(response => response.json())
+    .then(data => {
+        voiceChatEnabled = data.voice_chat_enabled;
+        console.log("Voice chat enabled:", voiceChatEnabled);
+        // Change button text based on the current state
+        let voiceChatButton = document.getElementById("voice-chat-button");
+        if (voiceChatEnabled) {
+            voiceChatButton.textContent = "Switch to Text Responses";
+        } else {
+            voiceChatButton.textContent = "Switch to Voice Responses";
+        }
+        // Retain audio elements in the chat history
+        if (!voiceChatEnabled) {
+            let chatBox = document.getElementById("chat-box");
+            let audioElements = chatBox.querySelectorAll("audio");
+            audioElements.forEach(audio => {
+                let audioDiv = document.createElement("div");
+                audioDiv.className = "ai-message";
+                audioDiv.appendChild(audio);
+                chatBox.appendChild(audioDiv);
+            });
+        }
+    })
+    .catch(error => console.error("Error toggling voice chat:", error));
 }
 
 // Add event listeners
