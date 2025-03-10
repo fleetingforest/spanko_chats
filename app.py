@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
+import sqlite3
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"  # Required for session
@@ -85,6 +86,64 @@ current_persona = "Daddy"
 scenario = ""
 voice_chat_enabled = False
 
+# Database setup
+DATABASE = 'tokens.db'
+TOKEN_LIMIT = 150_000
+VOICE_TOKEN_LIMIT = 10_000
+
+def init_db():
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS token_usage (
+                ip_address TEXT PRIMARY KEY,
+                tokens INTEGER,
+                voice_tokens INTEGER DEFAULT 0
+            )
+        ''')
+        # Check if the voice_tokens column exists
+        cursor.execute("PRAGMA table_info(token_usage)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if "voice_tokens" not in columns:
+            cursor.execute('''
+                ALTER TABLE token_usage ADD COLUMN voice_tokens INTEGER DEFAULT 0
+            ''')
+        conn.commit()
+
+def get_tokens(ip_address):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT tokens FROM token_usage WHERE ip_address = ?', (ip_address,))
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+def update_tokens(ip_address, tokens):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO token_usage (ip_address, tokens)
+            VALUES (?, ?)
+            ON CONFLICT(ip_address) DO UPDATE SET tokens = tokens + excluded.tokens
+        ''', (ip_address, tokens))
+        conn.commit()
+
+def get_voice_tokens(ip_address):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT voice_tokens FROM token_usage WHERE ip_address = ?', (ip_address,))
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+def update_voice_tokens(ip_address, tokens):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO token_usage (ip_address, voice_tokens)
+            VALUES (?, ?)
+            ON CONFLICT(ip_address) DO UPDATE SET voice_tokens = voice_tokens + excluded.voice_tokens
+        ''', (ip_address, tokens))
+        conn.commit()
+
 @app.route("/")
 def index():
     global conversation, current_persona, scenario, voice_chat_enabled
@@ -136,8 +195,14 @@ def send_message():
     global conversation, current_persona, voice_chat_enabled
     user_message = request.json.get("message")
     user_name = request.json.get("user_name", "You")
+    user_ip = request.remote_addr
+
     if not user_message:
         return jsonify({"status": "No message provided"}), 400
+
+    # Check token limit for the IP address
+    if get_tokens(user_ip) >= TOKEN_LIMIT:
+        return jsonify({"status": "Token limit exceeded"}), 403
 
     # Add user message to conversation
     conversation.append({"role": "user", "content": f"{user_name}: {user_message}"})
@@ -154,14 +219,26 @@ def send_message():
     # Post-process the response to ensure line breaks and italics
     ai_response = ai_response.replace("(", "_").replace(")", "_")  # Convert (action) to _action_
     ai_response = ai_response.replace(". ", ".\n").replace("! ", "!\n")
-    conversation.append({"role": "assistant", "content": ai_response})
+    conversation.append({"role": "assistant", "content": f"{current_persona}: {ai_response}"})
 
-    # Convert AI response to audio if voice chat is enabled
+    # Update token count for the IP address
+    update_tokens(user_ip, completion.usage.total_tokens)
+
+    # Print the number of tokens processed so far for the user's IP address
+    total_tokens = get_tokens(user_ip)
+    print(f"IP {user_ip} has processed {total_tokens} tokens so far.")
+
+    # Convert AI response to audio if voice chat is enabled and token limit is not exceeded
     audio_url = None
-    if voice_chat_enabled:
+    voice_tokens = get_voice_tokens(user_ip)
+    if voice_chat_enabled and voice_tokens <= VOICE_TOKEN_LIMIT:
         try:
             audio_file_path = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
             audio_url = url_for('static', filename=os.path.basename(audio_file_path))
+            update_voice_tokens(user_ip, completion.usage.total_tokens)
+            # Print the number of voice tokens processed so far for the user's IP address
+            voice_tokens = get_voice_tokens(user_ip)
+            print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
         except Exception as e:
             app.logger.error(f"Error converting text to audio: {e}")
 
@@ -232,5 +309,6 @@ def delete_old_audio_files():
         time.sleep(600)  # Check every 10 minutes
 
 if __name__ == "__main__":
+    init_db()
     threading.Thread(target=delete_old_audio_files, daemon=True).start()
     app.run(debug=True)
