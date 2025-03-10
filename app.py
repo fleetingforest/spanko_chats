@@ -4,7 +4,7 @@ from openai import OpenAI
 import os
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import sqlite3
 from cryptography.fernet import Fernet, InvalidToken
 import hashlib
@@ -264,7 +264,8 @@ def send_message():
             key = derive_key(user_ip)
             encrypted_file_path = encrypt_file(audio_file_path, key)
             audio_url = url_for('serve_audio', filename=encrypted_file_path)
-            update_voice_tokens(user_ip, completion.usage.total_tokens)
+            num_chars = len(ai_response)
+            update_voice_tokens(user_ip, num_chars)
             voice_tokens = get_voice_tokens(user_ip)
             print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
         except Exception as e:
@@ -367,7 +368,29 @@ def delete_old_audio_files():
                     app.logger.info(f"Deleted old encrypted audio file: {blob.name}")
         time.sleep(600)  # Check every 10 minutes
 
+def reset_tokens():
+    while True:
+        today = date.today()
+        if today.day == 1:  # Check if it's the 1st of the month
+            last_reset_ref = db.collection('metadata').document('last_reset')
+            last_reset_doc = last_reset_ref.get()
+            last_reset_date = last_reset_doc.to_dict().get('date') if last_reset_doc.exists else None
+
+            if last_reset_date != today.isoformat():  # Check if the reset has already been done today
+                users_ref = db.collection('token_usage')
+                users = users_ref.stream()
+                for user in users:
+                    user_ref = db.collection('token_usage').document(user.id)
+                    user_ref.update({
+                        'tokens': 0,
+                        'voice_tokens': 0
+                    })
+                last_reset_ref.set({'date': today.isoformat()})  # Update the last reset date
+                app.logger.info("Tokens and voice tokens reset to 0 for all users.")
+        time.sleep(86400)  # Check once a day
+
 if __name__ == "__main__":
     init_db()
     threading.Thread(target=delete_old_audio_files, daemon=True).start()
+    threading.Thread(target=reset_tokens, daemon=True).start()
     app.run(debug=True)
