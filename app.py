@@ -172,7 +172,10 @@ def decrypt_file(file_path, key):
         return None
 
 def get_client_ip():
-    ip = request.access_route[-1]
+    if request.headers.get('X-Forwarded-For'):
+        ip = request.headers.getlist('X-Forwarded-For')[0]
+    else:
+        ip = request.remote_addr
     return ip
 
 @app.route("/")
