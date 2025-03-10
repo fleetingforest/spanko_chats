@@ -171,6 +171,13 @@ def decrypt_file(file_path, key):
     except InvalidToken:
         return None
 
+def get_client_ip():
+    if request.headers.get('X-Forwarded-For'):
+        ip = request.headers.getlist('X-Forwarded-For')[0]
+    else:
+        ip = request.remote_addr
+    return ip
+
 @app.route("/")
 def index():
     global conversation, current_persona, scenario, voice_chat_enabled
@@ -222,7 +229,7 @@ def send_message():
     global conversation, current_persona, voice_chat_enabled
     user_message = request.json.get("message")
     user_name = request.json.get("user_name", "You")
-    user_ip = request.remote_addr
+    user_ip = get_client_ip()
 
     if not user_message:
         return jsonify({"status": "No message provided"}), 400
@@ -313,7 +320,7 @@ def convert_to_audio():
         return jsonify({"status": "No AI message found to convert"}), 400
 
     app.logger.info(f"Converting AI message to audio: {last_ai_message}")
-    user_ip = request.remote_addr
+    user_ip = get_client_ip()
 
     # Call the TTS function, encrypt, and serve decrypted audio
     try:
@@ -334,7 +341,7 @@ def convert_to_audio():
 
 @app.route("/serve_audio/<filename>")
 def serve_audio(filename):
-    user_ip = request.remote_addr
+    user_ip = get_client_ip()
     key = derive_key(user_ip)
     
     # Download from Firebase
