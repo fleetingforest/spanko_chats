@@ -122,11 +122,12 @@ def set_scenario():
 def send_message():
     global conversation, current_persona
     user_message = request.json.get("message")
+    user_name = request.json.get("user_name", "You")
     if not user_message:
         return jsonify({"status": "No message provided"}), 400
 
     # Add user message to conversation
-    conversation.append({"role": "user", "content": user_message})
+    conversation.append({"role": "user", "content": f"{user_name}: {user_message}"})
 
     # Call Llama API for AI response
     completion = client.chat.completions.create(

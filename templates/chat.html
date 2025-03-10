@@ -11,8 +11,8 @@
         <h1>Spanking chat</h1>
 
         <!-- Persona Selection -->
-        <div class="persona-section">
-            <label for="persona-select">Choose a persona:</label>
+        <div class="persona-section" id="persona-section">
+            <label for="persona-select">Choose a persona to chat with:</label>
             <select id="persona-select">
                 {% for persona in personas %}
                     <option value="{{ persona }}">{{ persona }}</option>
@@ -22,11 +22,10 @@
         </div>
 
         <!-- Scenario Input -->
-        <div class="scenario-section">
+        <div class="scenario-section" id="scenario-section">
             <label for="scenario-input">Set the scenario:</label>
             <input type="text" id="scenario-input" placeholder="Enter scenario details...">
             <button onclick="setScenario()">Set Scenario</button>
-            <button onclick="clearChat()">Clear Chat</button>
         </div>
 
         <!-- Chat Display -->
@@ -38,9 +37,18 @@
             {% endfor %}
         </div>
 
+        <!-- Name Input -->
+        <div class="name-section" id="name-section">
+            <input type="text" id="name-input" placeholder="Enter your name" required>
+            <button onclick="setName()">Set Name</button>
+        </div>
+
         <!-- Message Input -->
         <input type="text" id="message-input" placeholder="Type your message...">
         <button onclick="sendMessage()">Send</button>
+
+        <!-- Clear Chat Button -->
+        <button id="clear-chat-button" onclick="clearChat()" style="display: none;">Clear Chat</button>
     </div>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>

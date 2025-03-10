@@ -1,5 +1,14 @@
 // Track the active persona separately from the dropdown selection
 let activePersona = "Daddy"; // Default to match the server's default
+let userName = "You"; // Default user name
+
+function setName() {
+    let nameInput = document.getElementById("name-input");
+    if (nameInput.value.trim() !== "") {
+        userName = nameInput.value.trim();
+        document.getElementById("name-section").style.display = "none"; // Hide name input section
+    }
+}
 
 function sendMessage() {
     let input = document.getElementById("message-input");
@@ -10,7 +19,7 @@ function sendMessage() {
     let chatBox = document.getElementById("chat-box");
     let userDiv = document.createElement("div");
     userDiv.className = "user-message";
-    userDiv.textContent = "You: " + message;
+    userDiv.textContent = userName + ": " + message;
     chatBox.appendChild(userDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -20,10 +29,13 @@ function sendMessage() {
     chatBox.appendChild(typingDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
 
+    // Show clear chat button after the first message is sent
+    document.getElementById("clear-chat-button").style.display = "block";
+
     fetch("/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message }),
+        body: JSON.stringify({ message: message, user_name: userName }),
     })
     .then(response => {
         if (!response.ok) {
@@ -68,6 +80,7 @@ function setScenario() {
     .then(data => {
         console.log(data.status);
         scenarioInput.value = "";
+        document.getElementById("scenario-section").style.display = "none"; // Hide scenario section
     })
     .catch(error => console.error("Error:", error));
 }
@@ -88,6 +101,7 @@ function setPersona() {
             activePersona = data.current_persona;
         }
         updateChat(data.conversation); // Update chat with cleared conversation
+        document.getElementById("persona-section").style.display = "none"; // Hide persona section
     })
     .catch(error => console.error("Error setting persona:", error));
 }
@@ -113,6 +127,9 @@ function clearChat() {
             activePersona = data.current_persona;
         }
         document.getElementById("scenario-input").value = "";
+        document.getElementById("persona-section").style.display = "block"; // Show persona section
+        document.getElementById("scenario-section").style.display = "block"; // Show scenario section
+        document.getElementById("clear-chat-button").style.display = "none"; // Hide clear chat button
         console.log("Chat cleared and input reset");
     })
     .catch(error => {
@@ -120,6 +137,9 @@ function clearChat() {
         let chatBox = document.getElementById("chat-box");
         chatBox.innerHTML = "";
         document.getElementById("scenario-input").value = "";
+        document.getElementById("persona-section").style.display = "block"; // Show persona section
+        document.getElementById("scenario-section").style.display = "block"; // Show scenario section
+        document.getElementById("clear-chat-button").style.display = "none"; // Hide clear chat button
         console.log("Forced chat clear due to error");
     });
 }
@@ -138,18 +158,12 @@ function updateChat(conversation) {
                 return `<i>${capitalized}</i>`;
             })
             .replace(/\n/g, "<br>");
-        messageDiv.innerHTML = (msg.role === "user" ? "You" : activePersona) + ": " + formattedContent;
+        messageDiv.innerHTML = (msg.role === "user" ? userName : activePersona) + ": " + formattedContent;
         chatBox.appendChild(messageDiv);
     });
 
     chatBox.scrollTop = chatBox.scrollHeight;
 }
-
-// No longer needed since we're using the activePersona variable directly
-// function getCurrentPersona() {
-//     let select = document.getElementById("persona-select");
-//     return select.value || "Daddy"; // Default to Daddy if not set
-// }
 
 // Add event listeners
 document.getElementById("message-input").addEventListener("keypress", function(event) {
@@ -162,6 +176,11 @@ document.getElementById("scenario-input").addEventListener("keypress", function(
     if (event.key === "Enter") {
         setScenario();
     }
+});
+
+document.getElementById("name-form").addEventListener("submit", function(event) {
+    event.preventDefault(); // Prevent form submission
+    setName();
 });
 
 // You might want to add this to synchronize on page load
