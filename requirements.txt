@@ -3,3 +3,7 @@ flask
 gunicorn
 pydub
 requests
+flask-security-too 
+flask-sqlalchemy 
+flask-wtf 
+flask-mail
