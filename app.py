@@ -9,6 +9,8 @@ import sqlite3
 from cryptography.fernet import Fernet, InvalidToken
 import hashlib
 import base64
+import firebase_admin
+from firebase_admin import credentials, storage, firestore
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"  # Required for session
@@ -18,6 +20,17 @@ client = OpenAI(
     api_key="84356e33-18b6-43cd-9803-695b5cf86f9f",
     base_url="https://api.llama-api.com/"
 )
+
+# Initialize Firebase
+cred = credentials.Certificate("static/spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json")  # Replace with your service account key path
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred, {
+        'storageBucket': 'spanking-chat.firebasestorage.app'  # Replace with your Firebase bucket
+    })
+bucket = storage.bucket()
+
+# Initialize Firestore
+db = firestore.client()
 
 # Define multiple personas with their system prompts
 PERSONAS = {
@@ -84,7 +97,6 @@ scenario = ""
 voice_chat_enabled = False
 
 # Database setup
-DATABASE = 'tokens.db'
 TOKEN_LIMIT = 150_000
 VOICE_TOKEN_LIMIT = 10_000
 
@@ -92,57 +104,34 @@ VOICE_TOKEN_LIMIT = 10_000
 SECRET_SALT = b"your-secret-salt-here"  # Replace with a secure, random value
 
 def init_db():
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS token_usage (
-                ip_address TEXT PRIMARY KEY,
-                tokens INTEGER,
-                voice_tokens INTEGER DEFAULT 0
-            )
-        ''')
-        # Check if the voice_tokens column exists
-        cursor.execute("PRAGMA table_info(token_usage)")
-        columns = [column[1] for column in cursor.fetchall()]
-        if "voice_tokens" not in columns:
-            cursor.execute('''
-                ALTER TABLE token_usage ADD COLUMN voice_tokens INTEGER DEFAULT 0
-            ''')
-        conn.commit()
+    # Firestore automatically handles database initialization
+    pass
 
 def get_tokens(ip_address):
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT tokens FROM token_usage WHERE ip_address = ?', (ip_address,))
-        row = cursor.fetchone()
-        return row[0] if row else 0
+    doc_ref = db.collection('token_usage').document(ip_address)
+    doc = doc_ref.get()
+    if doc.exists:
+        return doc.to_dict().get('tokens', 0)
+    return 0
 
 def update_tokens(ip_address, tokens):
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO token_usage (ip_address, tokens)
-            VALUES (?, ?)
-            ON CONFLICT(ip_address) DO UPDATE SET tokens = tokens + excluded.tokens
-        ''', (ip_address, tokens))
-        conn.commit()
+    doc_ref = db.collection('token_usage').document(ip_address)
+    doc_ref.set({
+        'tokens': firestore.Increment(tokens)
+    }, merge=True)
 
 def get_voice_tokens(ip_address):
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT voice_tokens FROM token_usage WHERE ip_address = ?', (ip_address,))
-        row = cursor.fetchone()
-        return row[0] if row else 0
+    doc_ref = db.collection('token_usage').document(ip_address)
+    doc = doc_ref.get()
+    if doc.exists:
+        return doc.to_dict().get('voice_tokens', 0)
+    return 0
 
 def update_voice_tokens(ip_address, tokens):
-    with sqlite3.connect(DATABASE) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO token_usage (ip_address, voice_tokens)
-            VALUES (?, ?)
-            ON CONFLICT(ip_address) DO UPDATE SET voice_tokens = voice_tokens + excluded.voice_tokens
-        ''', (ip_address, tokens))
-        conn.commit()
+    doc_ref = db.collection('token_usage').document(ip_address)
+    doc_ref.set({
+        'voice_tokens': firestore.Increment(tokens)
+    }, merge=True)
 
 def derive_key(ip_address):
     """Derive a Fernet key from the user's IP address and a secret salt."""
@@ -151,16 +140,25 @@ def derive_key(ip_address):
     return base64.urlsafe_b64encode(key)  # Fernet expects base64-encoded key
 
 def encrypt_file(file_path, key):
-    """Encrypt a file using Fernet."""
+    """Encrypt a file using Fernet and upload to Firebase."""
     fernet = Fernet(key)
     with open(file_path, 'rb') as f:
         data = f.read()
     encrypted_data = fernet.encrypt(data)
-    encrypted_file_path = file_path + '.enc'
-    with open(encrypted_file_path, 'wb') as f:
-        f.write(encrypted_data)
+    encrypted_filename = os.path.basename(file_path) + '.enc'
+    blob = bucket.blob(f"audio/{encrypted_filename}")
+    blob.upload_from_string(encrypted_data, content_type='application/octet-stream')
     os.remove(file_path)  # Remove the unencrypted file
-    return encrypted_file_path
+    return encrypted_filename
+
+def decrypt_file_data(encrypted_data, key):
+    """Decrypt data using Fernet, returning the decrypted data."""
+    fernet = Fernet(key)
+    try:
+        decrypted_data = fernet.decrypt(encrypted_data)
+        return decrypted_data
+    except InvalidToken:
+        return None
 
 def decrypt_file(file_path, key):
     """Decrypt a file using Fernet, returning the decrypted data."""
@@ -265,7 +263,7 @@ def send_message():
             audio_file_path = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
             key = derive_key(user_ip)
             encrypted_file_path = encrypt_file(audio_file_path, key)
-            audio_url = url_for('serve_audio', filename=os.path.basename(encrypted_file_path))
+            audio_url = url_for('serve_audio', filename=encrypted_file_path)
             update_voice_tokens(user_ip, completion.usage.total_tokens)
             voice_tokens = get_voice_tokens(user_ip)
             print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
@@ -321,7 +319,7 @@ def convert_to_audio():
         audio_file_path = openai_tts_test.convert_text_to_audio(last_ai_message, current_persona)
         key = derive_key(user_ip)
         encrypted_file_path = encrypt_file(audio_file_path, key)
-        decrypted_data = decrypt_file(encrypted_file_path, key)
+        decrypted_data = decrypt_file_data(bucket.blob(f"audio/{encrypted_file_path}").download_as_bytes(), key)
         if decrypted_data is None:
             return jsonify({"status": "Error decrypting audio"}), 500
         return Response(
@@ -336,13 +334,17 @@ def convert_to_audio():
 @app.route("/serve_audio/<filename>")
 def serve_audio(filename):
     user_ip = request.remote_addr
-    file_path = os.path.join(app.root_path, 'static', filename)
     key = derive_key(user_ip)
-
-    if not os.path.exists(file_path):
+    
+    # Download from Firebase
+    blob = bucket.blob(f"audio/{filename}")
+    try:
+        encrypted_data = blob.download_as_bytes()
+    except Exception as e:
+        app.logger.error(f"Error downloading file from Firebase: {e}")
         return jsonify({"status": "Audio file not found"}), 404
 
-    decrypted_data = decrypt_file(file_path, key)
+    decrypted_data = decrypt_file_data(encrypted_data, key)
     if decrypted_data is None:
         return jsonify({"status": "Unauthorized access or invalid key"}), 403
 
@@ -356,14 +358,13 @@ def delete_old_audio_files():
     while True:
         now = datetime.now()
         cutoff = now - timedelta(minutes=30)
-        static_dir = os.path.join(os.path.dirname(__file__), 'static')
-        for filename in os.listdir(static_dir):
-            if filename.startswith("openai_output_") and filename.endswith(".enc"):
-                file_path = os.path.join(static_dir, filename)
-                file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
-                if file_time < cutoff:
-                    os.remove(file_path)
-                    app.logger.info(f"Deleted old encrypted audio file: {file_path}")
+        blobs = bucket.list_blobs(prefix="audio/")
+        for blob in blobs:
+            if blob.name.startswith("audio/openai_output_") and blob.name.endswith(".enc"):
+                updated_time = blob.updated.replace(tzinfo=None)  # Make offset-naive
+                if updated_time < cutoff:
+                    blob.delete()
+                    app.logger.info(f"Deleted old encrypted audio file: {blob.name}")
         time.sleep(600)  # Check every 10 minutes
 
 if __name__ == "__main__":

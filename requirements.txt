@@ -7,3 +7,4 @@ flask-security-too
 flask-sqlalchemy 
 flask-wtf 
 flask-mail
+firebase-admin
