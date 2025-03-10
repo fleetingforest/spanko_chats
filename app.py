@@ -173,7 +173,7 @@ def decrypt_file(file_path, key):
 
 def get_client_ip():
     if request.headers.get('X-Forwarded-For'):
-        ip = request.headers.getlist('X-Forwarded-For')[0]
+        ip = request.headers.get('X-Forwarded-For').split(',')[0].strip()  # Get the first IP
     else:
         ip = request.remote_addr
     return ip
