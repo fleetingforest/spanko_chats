@@ -97,8 +97,8 @@ scenario = ""
 voice_chat_enabled = False
 
 # Database setup
-TOKEN_LIMIT = 150_000
-VOICE_TOKEN_LIMIT = 10_000
+TOKEN_LIMIT = 1_000_000
+VOICE_TOKEN_LIMIT = 50_000
 
 # Secret salt for key derivation (keep this secret and consistent)
 SECRET_SALT = b"your-secret-salt-here"  # Replace with a secure, random value
