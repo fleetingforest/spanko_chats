@@ -242,11 +242,14 @@ def patreon_callback():
         "client_secret": PATREON_CLIENT_SECRET,
         "redirect_uri": PATREON_REDIRECT_URI
     }
-    response = requests.post(token_url, data=data)
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    response = requests.post(token_url, data=data, headers=headers)
     token_data = response.json()
 
     if "access_token" not in token_data:
-        return render_template("", error="Failed to get Patreon access token")
+        return render_template("login.html", error="Failed to get Patreon access token")
 
     # Get Patreon user info
     headers = {"Authorization": f"Bearer {token_data['access_token']}"}
