@@ -217,7 +217,7 @@ def patreon_login():
     if not is_authenticated():
         return redirect(url_for("login"))
     auth_url = (
-        f"https://www.patreon.com/oauth2/authorize?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&scope=identity"
+        f"https://www.patreon.com/oauth2/authorize?"
         f"response_type=code&client_id={PATREON_CLIENT_ID}&"
         f"redirect_uri={PATREON_REDIRECT_URI}&"
         f"scope=identity%20identity.memberships"
