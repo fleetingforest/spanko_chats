@@ -246,7 +246,7 @@ def patreon_callback():
     token_data = response.json()
 
     if "access_token" not in token_data:
-        return render_template("login.html", error="Failed to get Patreon access token")
+        return render_template("", error="Failed to get Patreon access token")
 
     # Get Patreon user info
     headers = {"Authorization": f"Bearer {token_data['access_token']}"}
