@@ -217,7 +217,7 @@ def patreon_login():
     if not is_authenticated():
         return redirect(url_for("login"))
     auth_url = (
-        f"https://www.patreon.com/oauth2/authorize?"
+        f"https://www.patreon.com/oauth2/https://www.patreon.com/oauth2/authorize?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&scope=identity"
         f"response_type=code&client_id={PATREON_CLIENT_ID}&"
         f"redirect_uri={PATREON_REDIRECT_URI}&"
         f"scope=identity%20identity.memberships"
@@ -242,10 +242,7 @@ def patreon_callback():
         "client_secret": PATREON_CLIENT_SECRET,
         "redirect_uri": PATREON_REDIRECT_URI
     }
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    response = requests.post(token_url, data=data, headers=headers)
+    response = requests.post(token_url, data=data)
     token_data = response.json()
 
     if "access_token" not in token_data:
