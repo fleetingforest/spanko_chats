@@ -17,8 +17,8 @@ app.secret_key = "your-secret-key"  # Required for session
 
 # Initialize OpenAI client (replace with your actual API key)
 client = OpenAI(
-    api_key="84356e33-18b6-43cd-9803-695b5cf86f9f",
-    base_url="https://api.llama-api.com/"
+    api_key=os.getenv("DEEPINFRA_API_KEY"),
+    base_url="https://api.deepinfra.com/v1/openai"
 )
 
 # Initialize Firebase
@@ -243,7 +243,7 @@ def send_message():
 
     # Call Llama API for AI response
     completion = client.chat.completions.create(
-        model="llama3-70b",
+        model="meta-llama/Meta-Llama-3-70B-Instruct",
         messages=conversation,
         stream=False
     )
