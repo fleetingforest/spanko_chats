@@ -8,6 +8,14 @@
 </head>
 <body>
     <div class="chat-container">
+        <!-- Add link to login/register or logout based on authentication status -->
+        <div style="text-align: right;">
+            {% if session.user_email %}
+                <a href="{{ url_for('logout') }}">Logout</a>
+            {% else %}
+                <a href="{{ url_for('login') }}">Login/Register</a>
+            {% endif %}
+        </div>
         <h1>Spanking chat</h1>
 
         <!-- Persona Selection -->

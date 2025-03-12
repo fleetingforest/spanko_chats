@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, send_file, url_for, Response
+from flask import Flask, render_template, request, jsonify, session, send_file, url_for, Response, redirect
 import openai_tts_test  # Import the TTS script
 from openai import OpenAI
 import os
@@ -11,6 +11,8 @@ import hashlib
 import base64
 import firebase_admin
 from firebase_admin import credentials, storage, firestore
+from passlib.hash import pbkdf2_sha256  # For password hashing
+import uuid
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"  # Required for session
@@ -97,15 +99,11 @@ scenario = ""
 voice_chat_enabled = False
 
 # Database setup
-TOKEN_LIMIT = 1_000_000
-VOICE_TOKEN_LIMIT = 50_000
+FREE_TOKEN_LIMIT = 1_000_000
+FREE_VOICE_TOKEN_LIMIT = 50_000
 
-# Secret salt for key derivation (keep this secret and consistent)
-SECRET_SALT = b"your-secret-salt-here"  # Replace with a secure, random value
+SECRET_SALT = os.getenv("SECRET_SALT", b"your-secret-salt-here")  # Use env var
 
-def init_db():
-    # Firestore automatically handles database initialization
-    pass
 
 def get_tokens(ip_address):
     doc_ref = db.collection('token_usage').document(ip_address)
@@ -160,23 +158,47 @@ def decrypt_file_data(encrypted_data, key):
     except InvalidToken:
         return None
 
-def decrypt_file(file_path, key):
-    """Decrypt a file using Fernet, returning the decrypted data."""
-    fernet = Fernet(key)
-    with open(file_path, 'rb') as f:
-        encrypted_data = f.read()
-    try:
-        decrypted_data = fernet.decrypt(encrypted_data)
-        return decrypted_data
-    except InvalidToken:
-        return None
-
 def get_client_ip():
     if request.headers.get('X-Forwarded-For'):
         ip = request.headers.get('X-Forwarded-For').split(',')[0].strip()  # Get the first IP
     else:
         ip = request.remote_addr
     return ip
+
+# Firestore user management
+def register_user(email, password):
+    user_ref = db.collection('users').document(email)
+    if user_ref.get().exists:
+        return False, "Email already registered"
+    hashed_password = pbkdf2_sha256.hash(password)
+    user_ref.set({
+        'email': email,
+        'password': hashed_password,
+        'active': True,
+        'fs_uniquifier': str(uuid.uuid4()),
+        'roles': ['user'],
+        'created_at': firestore.SERVER_TIMESTAMP
+    })
+    return True, "Registration successful"
+
+def login_user(email, password):
+    user_ref = db.collection('users').document(email)
+    doc = user_ref.get()
+    if not doc.exists:
+        return False, "User not found"
+    user_data = doc.to_dict()
+    if pbkdf2_sha256.verify(password, user_data['password']) and user_data['active']:
+        session['user_email'] = email
+        session['fs_uniquifier'] = user_data['fs_uniquifier']
+        return True, "Login successful"
+    return False, "Invalid credentials"
+
+def logout_user():
+    session.pop('user_email', None)
+    session.pop('fs_uniquifier', None)
+
+def is_authenticated():
+    return 'user_email' in session
 
 @app.route("/")
 def index():
@@ -187,6 +209,32 @@ def index():
     voice_chat_enabled = False
     print("Conversation reset on page load with persona:", current_persona)
     return render_template("chat.html", messages=conversation[1:], personas=list(PERSONAS.keys()), current_persona=current_persona)
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        action = request.form.get("action")
+        email = request.form.get("email")
+        password = request.form.get("password")
+        
+        if action == "login":
+            success, message = login_user(email, password)
+            if success:
+                return redirect(url_for("index"))
+            return render_template("login.html", error=message)
+        
+        elif action == "register":
+            success, message = register_user(email, password)
+            if success:
+                return render_template("login.html", success=message)
+            return render_template("login.html", error=message)
+    
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
 
 @app.route("/set_persona", methods=["POST"])
 def set_persona():
@@ -397,7 +445,6 @@ def reset_tokens():
         time.sleep(86400)  # Check once a day
 
 if __name__ == "__main__":
-    init_db()
     threading.Thread(target=delete_old_audio_files, daemon=True).start()
     threading.Thread(target=reset_tokens, daemon=True).start()
     app.run(debug=True)
