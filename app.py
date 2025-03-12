@@ -224,7 +224,7 @@ def patreon_login():
         f"https://www.patreon.com/oauth2/authorize?"
         f"response_type=code&client_id={PATREON_CLIENT_ID}&"
         f"redirect_uri={PATREON_REDIRECT_URI}&"
-        f"scope=identity%20identity.memberships"
+        f"scope=identity%20identity.memberships&"
         f"state={state}"
     )
     return redirect(auth_url)
