@@ -99,8 +99,8 @@ scenario = ""
 voice_chat_enabled = False
 
 # Database setup
-FREE_TOKEN_LIMIT = 1_000_000
-FREE_VOICE_TOKEN_LIMIT = 50_000
+TOKEN_LIMIT = 1_000_000
+VOICE_TOKEN_LIMIT = 50_000
 
 SECRET_SALT = os.getenv("SECRET_SALT", b"your-secret-salt-here")  # Use env var
 
