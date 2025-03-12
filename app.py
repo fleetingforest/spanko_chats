@@ -5,7 +5,6 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta, date
-import sqlite3
 from cryptography.fernet import Fernet, InvalidToken
 import hashlib
 import base64
@@ -13,6 +12,7 @@ import firebase_admin
 from firebase_admin import credentials, storage, firestore
 from passlib.hash import pbkdf2_sha256  # For password hashing
 import uuid
+import requests
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"  # Required for session
@@ -33,6 +33,10 @@ bucket = storage.bucket()
 
 # Initialize Firestore
 db = firestore.client()
+
+PATREON_CLIENT_ID = os.getenv("PATREON_CLIENT_ID")
+PATREON_CLIENT_SECRET = os.getenv("PATREON_CLIENT_SECRET")
+PATREON_REDIRECT_URI = ("https://spanking-chat.onrender.com/patreon/callback")
 
 # Define multiple personas with their system prompts
 PERSONAS = {
@@ -99,8 +103,10 @@ scenario = ""
 voice_chat_enabled = False
 
 # Database setup
-TOKEN_LIMIT = 1_000_000
-VOICE_TOKEN_LIMIT = 50_000
+FREE_TOKEN_LIMIT = 1_000_000
+PATREON_TOKEN_LIMIT = 5_000_000
+FREE_VOICE_TOKEN_LIMIT = 50_000
+PATREON_VOICE_TOKEN_LIMIT = 250_000
 
 SECRET_SALT = os.getenv("SECRET_SALT", b"your-secret-salt-here")  # Use env var
 
@@ -200,6 +206,104 @@ def logout_user():
 def is_authenticated():
     return 'user_email' in session
 
+def get_user_patreon_status(email):
+    user_ref = db.collection('users').document(email)
+    doc = user_ref.get()
+    return doc.to_dict().get('patreon_status', 'inactive') if doc.exists else 'inactive'
+
+# Patreon OAuth routes
+@app.route("/patreon/login")
+def patreon_login():
+    if not is_authenticated():
+        return redirect(url_for("login"))
+    auth_url = (
+        f"https://www.patreon.com/oauth2/authorize?"
+        f"response_type=code&client_id={PATREON_CLIENT_ID}&"
+        f"redirect_uri={PATREON_REDIRECT_URI}&"
+        f"scope=identity%20identity.memberships"
+    )
+    return redirect(auth_url)
+
+@app.route("/patreon/callback")
+def patreon_callback():
+    if not is_authenticated():
+        return redirect(url_for("login"))
+    
+    code = request.args.get("code")
+    if not code:
+        return render_template("login.html", error="Patreon authentication failed")
+
+    # Exchange code for access token
+    token_url = "https://www.patreon.com/api/oauth2/token"
+    data = {
+        "code": code,
+        "grant_type": "authorization_code",
+        "client_id": PATREON_CLIENT_ID,
+        "client_secret": PATREON_CLIENT_SECRET,
+        "redirect_uri": PATREON_REDIRECT_URI
+    }
+    response = requests.post(token_url, data=data)
+    token_data = response.json()
+
+    if "access_token" not in token_data:
+        return render_template("login.html", error="Failed to get Patreon access token")
+
+    # Get Patreon user info
+    headers = {"Authorization": f"Bearer {token_data['access_token']}"}
+    user_response = requests.get("https://www.patreon.com/api/oauth2/v2/identity?include=memberships", headers=headers)
+    user_data = user_response.json()
+
+    patreon_id = user_data["data"]["id"]
+    email = session['user_email']
+    user_ref = db.collection('users').document(email)
+
+    # Check membership status
+    membership = user_data.get("included", [])
+    patreon_status = "inactive"
+    for item in membership:
+        if item["type"] == "member" and item["attributes"]["currently_entitled_amount_cents"] > 0:
+            patreon_status = "active"
+            break
+
+    # Update Firestore with Patreon info
+    user_ref.update({
+        'patreon_id': patreon_id,
+        'patreon_access_token': token_data['access_token'],
+        'patreon_status': patreon_status
+    })
+
+    return redirect(url_for("index"))
+
+# Patreon Webhook
+@app.route("/patreon/webhook", methods=["POST"])
+def patreon_webhook():
+    # Verify webhook signature (optional, requires Patreon secret)
+    event_type = request.headers.get("X-Patreon-Event")
+    data = request.json
+
+    if event_type in ["members:pledge:create", "members:pledge:update"]:
+        patreon_id = data["data"]["relationships"]["user"]["data"]["id"]
+        pledge_amount = data["data"]["attributes"]["currently_entitled_amount_cents"]
+        status = "active" if pledge_amount > 0 else "inactive"
+        
+        # Find user by patreon_id and update status
+        users_ref = db.collection('users').where('patreon_id', '==', patreon_id).stream()
+        for user in users_ref:
+            user_ref = db.collection('users').document(user.id)
+            user_ref.update({'patreon_status': status})
+            app.logger.info(f"Updated Patreon status for {user.id} to {status}")
+
+    elif event_type == "members:pledge:delete":
+        patreon_id = data["data"]["relationships"]["user"]["data"]["id"]
+        users_ref = db.collection('users').where('patreon_id', '==', patreon_id).stream()
+        for user in users_ref:
+            user_ref = db.collection('users').document(user.id)
+            user_ref.update({'patreon_status': 'inactive'})
+            app.logger.info(f"Set Patreon status for {user.id} to inactive")
+
+    return jsonify({"status": "Webhook received"}), 200
+
+
 @app.route("/")
 def index():
     global conversation, current_persona, scenario, voice_chat_enabled
@@ -278,12 +382,19 @@ def send_message():
     user_message = request.json.get("message")
     user_name = request.json.get("user_name", "You")
     user_ip = get_client_ip()
+    user_email = session.get('user_email', None)
+    if user_email and is_authenticated():
+        token_limit = PATREON_TOKEN_LIMIT if get_user_patreon_status(user_email) == "active" else FREE_TOKEN_LIMIT
+        voice_token_limit = PATREON_VOICE_TOKEN_LIMIT if get_user_patreon_status(user_email) == "active" else FREE_VOICE_TOKEN_LIMIT
+    else:
+        token_limit = FREE_TOKEN_LIMIT
+        voice_token_limit = FREE_VOICE_TOKEN_LIMIT
 
     if not user_message:
         return jsonify({"status": "No message provided"}), 400
 
     # Check token limit for the IP address
-    if get_tokens(user_ip) >= TOKEN_LIMIT:
+    if get_tokens(user_ip) >= token_limit:
         return jsonify({"status": "Token limit exceeded"}), 403
 
     # Add user message to conversation
@@ -313,7 +424,7 @@ def send_message():
     # Convert AI response to audio if voice chat is enabled and token limit is not exceeded
     audio_url = None
     voice_tokens = get_voice_tokens(user_ip)
-    if voice_chat_enabled and voice_tokens <= VOICE_TOKEN_LIMIT:
+    if voice_chat_enabled and voice_tokens <= voice_token_limit:
         try:
             audio_file_path = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
             key = derive_key(user_ip)
