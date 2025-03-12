@@ -273,9 +273,11 @@ def patreon_callback():
     membership = user_data.get("included", [])
     patreon_status = "inactive"
     for item in membership:
-        if item["type"] == "member" and item["attributes"]["currently_entitled_amount_cents"] > 0:
-            patreon_status = "active"
-            break
+        if item.get("type") == "member":
+            attributes = item.get("attributes", {})
+            if attributes.get("currently_entitled_amount_cents", 0) > 0:
+                patreon_status = "active"
+                break  # Stop checking after finding an active membership
 
     # Update Firestore with Patreon info
     user_ref.update({
