@@ -13,6 +13,7 @@ from firebase_admin import credentials, storage, firestore
 from passlib.hash import pbkdf2_sha256  # For password hashing
 import uuid
 import requests
+import secrets
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"  # Required for session
