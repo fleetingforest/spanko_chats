@@ -216,11 +216,16 @@ def get_user_patreon_status(email):
 def patreon_login():
     if not is_authenticated():
         return redirect(url_for("login"))
+    
+    state = secrets.token_hex(16)
+    session["oauth_state"] = state
+
     auth_url = (
         f"https://www.patreon.com/oauth2/authorize?"
         f"response_type=code&client_id={PATREON_CLIENT_ID}&"
         f"redirect_uri={PATREON_REDIRECT_URI}&"
         f"scope=identity%20identity.memberships"
+        f"state={state}"
     )
     return redirect(auth_url)
 
@@ -228,6 +233,11 @@ def patreon_login():
 def patreon_callback():
     if not is_authenticated():
         return redirect(url_for("login"))
+    
+    state = request.args.get("state")
+    if state != session.pop("oauth_state", None):  # Ensure it matches the stored value
+        return render_template("login.html", error="Invalid state parameter")
+
     
     code = request.args.get("code")
     if not code:
@@ -242,7 +252,8 @@ def patreon_callback():
         "client_secret": PATREON_CLIENT_SECRET,
         "redirect_uri": PATREON_REDIRECT_URI
     }
-    response = requests.post(token_url, data=data)
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    response = requests.post(token_url, data=data, headers=headers)
     token_data = response.json()
 
     if "access_token" not in token_data:
