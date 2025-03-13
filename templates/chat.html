@@ -73,5 +73,18 @@
     </div>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+    <!-- Disclaimer Link -->
+    <div class="disclaimer-link">
+        <a href="#" onclick="showDisclaimer()">Disclaimer</a>
+    </div>
+
+    <!-- Disclaimer Modal -->
+    <div id="disclaimer-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeDisclaimer()">&times;</span>
+            <p>Spanking should only take place between consenting adults. This app is roleplay, not real life. Hitting children is wrong.</p>
+        </div>
+    </div>
 </body>
 </html>

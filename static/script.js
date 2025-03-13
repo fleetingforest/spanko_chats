@@ -243,6 +243,22 @@ function toggleVoiceChat() {
     .catch(error => console.error("Error toggling voice chat:", error));
 }
 
+function showDisclaimer() {
+    document.getElementById("disclaimer-modal").style.display = "block";
+}
+
+function closeDisclaimer() {
+    document.getElementById("disclaimer-modal").style.display = "none";
+}
+
+// Close the modal when the user clicks anywhere outside of it
+window.onclick = function(event) {
+    let modal = document.getElementById("disclaimer-modal");
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
 // Add event listeners
 document.getElementById("message-input").addEventListener("keypress", function(event) {
     if (event.key === "Enter") {
