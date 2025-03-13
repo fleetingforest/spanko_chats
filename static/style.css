@@ -13,6 +13,38 @@ body {
     box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     margin: 0 auto;
+    position: relative;
+}
+
+.patreon-link {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 10; /* Ensure the link is on top */
+}
+
+.patreon-link a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.patreon-link a:hover {
+    text-decoration: underline;
+}
+
+.login-section {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+}
+
+.login-link {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.login-link:hover {
+    text-decoration: underline;
 }
 
 #chat-box {
@@ -81,10 +113,13 @@ input {
     margin-bottom: 15px;
 }
 
-h1 {
+h1.title {
     font-size: 24px;
     margin-bottom: 15px;
     text-align: center;
+    margin-top: 0; /* Add this line to move the title up */
+    position: relative;
+    top: -10px; /* Adjust this value to move the title slightly less */
 }
 
 select {

@@ -8,22 +8,26 @@
 </head>
 <body>
     <div class="chat-container">
+        <!-- Add Patreon link to the top left -->
+        <div class="patreon-link">
+            <a href="https://www.patreon.com/c/SpankingChat" target="_blank">Support us on Patreon</a>
+        </div>
+        <h1 class="title">Spanking chat</h1>
         <!-- Add link to login/register or logout based on authentication status -->
-        <div style="text-align: right;">
+        <div class="login-section">
             {% if session.user_email %}
-                <a href="{{ url_for('logout') }}">Logout</a>
+                <a href="{{ url_for('logout') }}" class="login-link">Logout</a>
                 <br>
                 {% if not patreon_linked %}
-                    <a href="{{ url_for('patreon_login') }}">Link Patreon</a>
+                    <a href="{{ url_for('patreon_login') }}" class="login-link">Link Patreon</a>
                 {% endif %}
             {% else %}
-                <a href="{{ url_for('login') }}">Login/Register</a>
+                <a href="{{ url_for('login') }}" class="login-link">Login/Register</a>
             {% endif %}
         </div>
-        <h1>Spanking chat</h1>
 
         <!-- Persona Selection -->
-        <div class="persona-section" id="persona-section">
+        <div class="persona-section" id="persona-section" style="margin-top: 40px;">
             <label for="persona-select">Choose a persona to chat with:</label>
             <select id="persona-select">
                 {% for persona in personas %}
