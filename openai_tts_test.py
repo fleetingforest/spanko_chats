@@ -21,6 +21,7 @@ PERSONA_VOICES = {
     "Strict teacher": "echo",  # Firm, no-nonsense
     "Cute little girl": "sage", # Sweet, innocent voice
     "Mischevious student": "fable", # Playful, mischievous voice
+    "Cute little boy": "alloy"
 }
 
 def convert_text_to_audio(text, current_persona):
