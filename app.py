@@ -438,6 +438,7 @@ def send_message():
     if get_tokens(user_ip) >= token_limit:
         return jsonify({"status": "Token limit exceeded"}), 403
 
+    
     # Add user message to conversation
     conversation.append({"role": "user", "content": f"{user_name}: {user_message}"})
 
@@ -453,7 +454,29 @@ def send_message():
     # Post-process the response to ensure line breaks and italics
     ai_response = ai_response.replace("(", "_").replace(")", "_")  # Convert (action) to _action_
     ai_response = ai_response.replace(". ", ".\n").replace("! ", "!\n")
-    conversation.append({"role": "assistant", "content": f"{current_persona}: {ai_response}"})
+
+    # Define possible prefixes to strip
+    persona_prefix = f"{current_persona}: "
+    # Map persona titles to their specific character names
+    character_names = {
+        "Cute little girl": "Gaby",
+        "Strict girlfriend": "Lara",
+        "Submissive Girlfriend": "Sophie",
+        "Strict teacher": "Mr. Levier",
+        "Babysitter": "Gina"
+        # Add others if they have specific names (e.g., "Daddy" or "Mommy" might not)
+    }
+    character_prefix = f"{character_names.get(current_persona, '')}: " if current_persona in character_names else None
+
+    # Remove either persona or character prefix if present
+    if ai_response.startswith(persona_prefix):
+        ai_response = ai_response[len(persona_prefix):].lstrip()
+    elif character_prefix and ai_response.startswith(character_prefix):
+        ai_response = ai_response[len(character_prefix):].lstrip()
+    
+    # Add the persona prefix once
+    final_response = f"{current_persona}: {ai_response}"
+    conversation.append({"role": "assistant", "content": final_response})
 
     # Update token count for the IP address
     update_tokens(user_ip, completion.usage.total_tokens)
