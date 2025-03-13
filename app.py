@@ -118,7 +118,6 @@ PERSONAS = {
         "When describing actions, use underscores (_) instead of parentheses, e.g., _softly_ instead of (softly). Add line breaks where it makes sense for readability."
     )
         
-    )
 }   
 
 # Store conversation, current persona, and voice chat status
