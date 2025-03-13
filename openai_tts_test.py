@@ -19,7 +19,8 @@ PERSONA_VOICES = {
     "Strict girlfriend": "shimmer", # Confident, fiery female voice for Lara
     "Submissive Girlfriend": "alloy", # Soft, gentle voice for shy Sophie
     "Strict teacher": "echo",  # Firm, no-nonsense
-    "Cute little girl": "alloy", # Sweet, innocent voice
+    "Cute little girl": "sage", # Sweet, innocent voice
+    "Mischevious student": "fable", # Playful, mischievous voice
 }
 
 def convert_text_to_audio(text, current_persona):
