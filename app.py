@@ -212,6 +212,11 @@ def get_user_patreon_status(email):
     doc = user_ref.get()
     return doc.to_dict().get('patreon_status', 'inactive') if doc.exists else 'inactive'
 
+def get_user_patreon_linked(email):
+    user_ref = db.collection('users').document(email)
+    doc = user_ref.get()
+    return doc.to_dict().get('patreon_linked', False) if doc.exists else False
+
 # Patreon OAuth routes
 @app.route("/patreon/login")
 def patreon_login():
@@ -283,7 +288,8 @@ def patreon_callback():
     user_ref.update({
         'patreon_id': patreon_id,
         'patreon_access_token': token_data['access_token'],
-        'patreon_status': patreon_status
+        'patreon_status': patreon_status,
+        'patreon_linked': True  # Set patreon_linked to True
     })
 
     return redirect(url_for("index"))
@@ -326,7 +332,13 @@ def index():
     scenario = ""
     voice_chat_enabled = False
     print("Conversation reset on page load with persona:", current_persona)
-    return render_template("chat.html", messages=conversation[1:], personas=list(PERSONAS.keys()), current_persona=current_persona)
+    
+    patreon_linked = False
+    if 'user_email' in session:
+        user_email = session['user_email']
+        patreon_linked = get_user_patreon_linked(user_email)
+    
+    return render_template("chat.html", messages=conversation[1:], personas=list(PERSONAS.keys()), current_persona=current_persona, patreon_linked=patreon_linked)
 
 @app.route("/login", methods=["GET", "POST"])
 def login():

@@ -12,6 +12,10 @@
         <div style="text-align: right;">
             {% if session.user_email %}
                 <a href="{{ url_for('logout') }}">Logout</a>
+                <br>
+                {% if not patreon_linked %}
+                    <a href="{{ url_for('patreon_login') }}">Link Patreon</a>
+                {% endif %}
             {% else %}
                 <a href="{{ url_for('login') }}">Login/Register</a>
             {% endif %}
