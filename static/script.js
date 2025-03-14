@@ -92,6 +92,8 @@ function sendMessage() {
 
 function setScenario() {
     let scenarioInput = document.getElementById("scenario-input");
+    let scenarioLabel = document.getElementById("scenario-label");
+    let scenarioButton = document.getElementById("set-scenario-button");
     let scenario = scenarioInput.value.trim();
 
     if (scenario === "") return;
@@ -105,7 +107,10 @@ function setScenario() {
     .then(data => {
         console.log(data.status);
         scenarioInput.value = "";
-        document.getElementById("scenario-section").style.display = "none"; // Hide scenario section
+        // Hide the scenario label, input field, and button
+        scenarioLabel.style.display = "none";
+        scenarioInput.style.display = "none";
+        scenarioButton.style.display = "none";
     })
     .catch(error => console.error("Error:", error));
 }
