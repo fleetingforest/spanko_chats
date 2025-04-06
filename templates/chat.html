@@ -8,10 +8,26 @@
 </head>
 <body>
     <div class="chat-container">
-        <h1>Spanking chat</h1>
+        <!-- Add Patreon link to the top left -->
+        <div class="patreon-link">
+            <a href="https://www.patreon.com/c/SpankingChat" target="_blank">Support us on Patreon</a>
+        </div>
+        <h1 class="title">Spanking chat</h1>
+        <!-- Add link to login/register or logout based on authentication status -->
+        <div class="login-section">
+            {% if session.user_email %}
+                <a href="{{ url_for('logout') }}" class="login-link">Logout</a>
+                <br>
+                {% if not patreon_linked %}
+                    <a href="{{ url_for('patreon_login') }}" class="login-link">Link Patreon</a>
+                {% endif %}
+            {% else %}
+                <a href="{{ url_for('login') }}" class="login-link">Login/Register</a>
+            {% endif %}
+        </div>
 
         <!-- Persona Selection -->
-        <div class="persona-section" id="persona-section">
+        <div class="persona-section" id="persona-section" style="margin-top: 40px;">
             <label for="persona-select">Choose a persona to chat with:</label>
             <select id="persona-select">
                 {% for persona in personas %}
@@ -57,5 +73,18 @@
     </div>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+    <!-- Disclaimer Link -->
+    <div class="disclaimer-link">
+        <a href="#" onclick="showDisclaimer()">Disclaimer</a>
+    </div>
+
+    <!-- Disclaimer Modal -->
+    <div id="disclaimer-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeDisclaimer()">&times;</span>
+            <p>Spanking should only take place between consenting adults. This app is roleplay, not real life. Hitting children is wrong.</p>
+        </div>
+    </div>
 </body>
 </html>

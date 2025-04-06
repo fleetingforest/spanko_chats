@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login or Register</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .form-container { max-width: 400px; margin: 0 auto; }
+        .form-section { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; }
+        input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 20px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        .message { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <h2>Login or Register</h2>
+
+        <!-- Login Form -->
+        <div class="form-section">
+            <h3>Login</h3>
+            <form method="POST" action="{{ url_for('login') }}">
+                <input type="hidden" name="action" value="login">
+                <label for="login-email">Email:</label>
+                <input type="email" id="login-email" name="email" required>
+                <label for="login-password">Password:</label>
+                <input type="password" id="login-password" name="password" required>
+                <button type="submit">Login</button>
+            </form>
+        </div>
+
+        <!-- Registration Form -->
+        <div class="form-section">
+            <h3>Register</h3>
+            <form method="POST" action="{{ url_for('login') }}">
+                <input type="hidden" name="action" value="register">
+                <label for="register-email">Email:</label>
+                <input type="email" id="register-email" name="email" required>
+                <label for="register-password">Password:</label>
+                <input type="password" id="register-password" name="password" required>
+                <button type="submit">Register</button>
+            </form>
+        </div>
+
+        <!-- Messages -->
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+        {% if success %}
+            <p class="message">{{ success }}</p>
+        {% endif %}
+    </div>
+</body>
+</html>

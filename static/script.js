@@ -26,7 +26,20 @@ function sendMessage() {
 
     let typingDiv = document.createElement("div");
     typingDiv.className = "ai-message";
-    typingDiv.textContent = activePersona + (voiceChatEnabled ? " is preparing to speak..." : " is typing...");
+    let characterNames = {
+        "Cute little girl": "Gaby",
+        "Strict girlfriend": "Lara",
+        "Submissive Girlfriend": "Sophie",
+        "Strict teacher": "Mr. Levier",
+        "Babysitter": "Gina",
+        "Daddy": "Daddy",
+        "Mommy": "Mommy",
+        "Mischevious student": "Stewart",
+        "Cute little boy": "Eli",
+        "Bratty teen girl": "Kayla"
+    };
+    let characterName = characterNames[activePersona] || activePersona;
+    typingDiv.textContent = characterName + (voiceChatEnabled ? " is preparing to speak..." : " is typing...");
     chatBox.appendChild(typingDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -241,6 +254,22 @@ function toggleVoiceChat() {
         }
     })
     .catch(error => console.error("Error toggling voice chat:", error));
+}
+
+function showDisclaimer() {
+    document.getElementById("disclaimer-modal").style.display = "block";
+}
+
+function closeDisclaimer() {
+    document.getElementById("disclaimer-modal").style.display = "none";
+}
+
+// Close the modal when the user clicks anywhere outside of it
+window.onclick = function(event) {
+    let modal = document.getElementById("disclaimer-modal");
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
 }
 
 // Add event listeners
