@@ -2,12 +2,148 @@
 let activePersona = "Daddy"; // Default to match the server's default
 let userName = "You"; // Default user name
 let voiceChatEnabled = false;
+let selectedPersonaInOnboarding = null;
+let currentOnboardingStep = 1;
+// Add setup state tracking variables
+let personaSet = false;
+let nameSet = false;
+let scenarioSet = false;
+
+// Check if this is a first-time visitor
+function checkFirstTimeVisitor() {
+    // Always show the onboarding overlay regardless of whether the user has visited before
+    document.getElementById('onboarding-overlay').style.display = 'flex';
+    
+    // Reset onboarding state
+    currentOnboardingStep = 1;
+    selectedPersonaInOnboarding = null;
+    
+    // Show first step, hide others
+    document.querySelectorAll('.onboarding-step').forEach(step => {
+        step.classList.remove('active');
+    });
+    document.querySelector('.onboarding-step[data-step="1"]').classList.add('active');
+    
+    // Clear any previous selections
+    document.querySelectorAll('.persona-option').forEach(option => {
+        option.classList.remove('selected');
+    });
+    
+    // Reset input fields in onboarding
+    if (document.getElementById('onboarding-name')) {
+        document.getElementById('onboarding-name').value = '';
+    }
+    if (document.getElementById('onboarding-scenario')) {
+        document.getElementById('onboarding-scenario').value = '';
+    }
+}
+
+// Handle persona selection in onboarding
+function selectPersonaInOnboarding(persona) {
+    // Clear previous selections
+    document.querySelectorAll('.persona-option').forEach(option => {
+        option.classList.remove('selected');
+    });
+    
+    // Select the clicked persona
+    event.currentTarget.classList.add('selected');
+    selectedPersonaInOnboarding = persona;
+}
+
+// Handle keydown events in the onboarding overlay
+function handleOnboardingKeydown(event) {
+    // If Enter key is pressed on the first step (persona selection)
+    if (event.key === "Enter" && currentOnboardingStep === 1 && selectedPersonaInOnboarding) {
+        nextOnboardingStep();
+    }
+}
+
+// Handle navigation between onboarding steps
+function nextOnboardingStep() {
+    // Validate current step
+    if (currentOnboardingStep === 1 && !selectedPersonaInOnboarding) {
+        alert("Please select a persona to continue.");
+        return;
+    }
+    
+    if (currentOnboardingStep === 2) {
+        const nameInput = document.getElementById('onboarding-name');
+        if (!nameInput.value.trim()) {
+            alert("Please enter your name to continue.");
+            return;
+        }
+        userName = nameInput.value.trim();
+    }
+    
+    // Hide current step
+    document.querySelector(`.onboarding-step[data-step="${currentOnboardingStep}"]`).classList.remove('active');
+    
+    // Move to next step
+    currentOnboardingStep++;
+    
+    // Show next step
+    document.querySelector(`.onboarding-step[data-step="${currentOnboardingStep}"]`).classList.add('active');
+    
+    // Focus the input field on the next step if it's a text input
+    const stepInput = document.querySelector(`.onboarding-step[data-step="${currentOnboardingStep}"] input`);
+    if (stepInput) {
+        stepInput.focus();
+    }
+}
+
+// Complete onboarding and start chat
+function completeOnboarding() {
+    const scenarioInput = document.getElementById('onboarding-scenario');
+    const scenario = scenarioInput.value.trim();
+    
+    if (!scenario) {
+        alert("Please describe a scenario to continue.");
+        return;
+    }
+    
+    // Set the persona in the dropdown
+    document.getElementById('persona-select').value = selectedPersonaInOnboarding;
+    
+    // Set the name
+    document.getElementById('name-input').value = userName;
+    
+    // Set the scenario
+    document.getElementById('scenario-input').value = scenario;
+    
+    // Hide the onboarding overlay
+    document.getElementById('onboarding-overlay').style.display = 'none';
+    
+    // Hide the name section as we've already collected it
+    document.getElementById('name-section').style.display = 'none';
+    
+    // Set our state tracking variables
+    nameSet = true;
+    
+    // Trigger the setPersona and setScenario functions
+    setPersona(true); // Pass true to indicate we're in the onboarding flow
+}
 
 function setName() {
     let nameInput = document.getElementById("name-input");
     if (nameInput.value.trim() !== "") {
         userName = nameInput.value.trim();
         document.getElementById("name-section").style.display = "none"; // Hide name input section
+        nameSet = true;
+        
+        // Check if all requirements are met to start the chat
+        checkAndTriggerFirstMessage();
+    }
+}
+
+// New function to check if we have all requirements to start a chat
+function checkAndTriggerFirstMessage() {
+    console.log("Checking if we can start chat. Name set:", nameSet, "Persona set:", personaSet, "Scenario set:", scenarioSet);
+    
+    if (nameSet && personaSet && scenarioSet && document.getElementById("chat-box").children.length === 0) {
+        console.log("All conditions met, triggering first message");
+        getAiFirstMessage();
+    } else {
+        console.log("Not all conditions met for starting chat");
     }
 }
 
@@ -44,7 +180,7 @@ function sendMessage() {
     chatBox.scrollTop = chatBox.scrollHeight;
 
     // Show clear chat button after the first message is sent
-    document.getElementById("clear-chat-button").style.display = "block";
+    document.getElementById("new-chat-button").style.display = "block";
 
     fetch("/send", {
         method: "POST",
@@ -90,13 +226,93 @@ function sendMessage() {
     input.value = "";
 }
 
-function setScenario() {
+// New function to request the AI's first message
+function getAiFirstMessage() {
+    let chatBox = document.getElementById("chat-box");
+    
+    // Don't proceed if there are already messages
+    if (chatBox.children.length > 0) {
+        console.log("Chat already has messages, not sending first message");
+        return;
+    }
+    
+    console.log("Getting AI first message with username:", userName);
+    
+    // Show "typing" indicator
+    let typingDiv = document.createElement("div");
+    typingDiv.className = "ai-message";
+    let characterNames = {
+        "Cute little girl": "Gaby",
+        "Strict girlfriend": "Lara",
+        "Submissive Girlfriend": "Sophie",
+        "Strict teacher": "Mr. Levier",
+        "Babysitter": "Gina",
+        "Daddy": "Daddy",
+        "Mommy": "Mommy",
+        "Mischevious student": "Stewart",
+        "Cute little boy": "Eli",
+        "Bratty teen girl": "Kayla"
+    };
+    let characterName = characterNames[activePersona] || activePersona;
+    typingDiv.textContent = characterName + (voiceChatEnabled ? " is preparing to speak..." : " is typing...");
+    chatBox.appendChild(typingDiv);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    
+    // Show clear chat button after the first message is requested
+    document.getElementById("new-chat-button").style.display = "block";
+    
+    // Request first message from the AI
+    fetch("/get_first_message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_name: userName }),
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log("First message received:", data.status);
+        chatBox.removeChild(typingDiv);
+        if (voiceChatEnabled && data.audio_url) {
+            // Add audio control element
+            let audioDiv = document.createElement("div");
+            audioDiv.className = "ai-message";
+            let audioControl = document.createElement("audio");
+            audioControl.controls = true;
+            audioControl.src = data.audio_url;
+            audioDiv.appendChild(audioControl);
+            chatBox.appendChild(audioDiv);
+        } else {
+            updateChat(data.conversation);
+        }
+        // Check if the server included the current persona in response
+        if (data.current_persona) {
+            activePersona = data.current_persona;
+        }
+    })
+    .catch(error => {
+        console.error("Error:", error);
+        chatBox.removeChild(typingDiv);
+        let errorDiv = document.createElement("div");
+        errorDiv.className = "ai-message";
+        errorDiv.textContent = activePersona + ": Oops, something went wrong!";
+        chatBox.appendChild(errorDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    });
+}
+
+function setScenario(triggerAiMessage = false) {
     let scenarioInput = document.getElementById("scenario-input");
     let scenarioLabel = document.getElementById("scenario-label");
     let scenarioButton = document.getElementById("set-scenario-button");
     let scenario = scenarioInput.value.trim();
 
     if (scenario === "") return;
+    
+    console.log("Setting scenario:", scenario);
 
     fetch("/set_scenario", {
         method: "POST",
@@ -105,19 +321,32 @@ function setScenario() {
     })
     .then(response => response.json())
     .then(data => {
-        console.log(data.status);
+        console.log("Scenario set response:", data.status);
         scenarioInput.value = "";
         // Hide the scenario label, input field, and button
         scenarioLabel.style.display = "none";
         scenarioInput.style.display = "none";
         scenarioButton.style.display = "none";
+        
+        // Update our scenario state
+        scenarioSet = true;
+        
+        // If this was called from the onboarding flow with the trigger flag
+        if (triggerAiMessage) {
+            getAiFirstMessage();
+        } else {
+            // Check if we have all the requirements to start chat
+            checkAndTriggerFirstMessage();
+        }
     })
-    .catch(error => console.error("Error:", error));
+    .catch(error => console.error("Error setting scenario:", error));
 }
 
-function setPersona() {
+function setPersona(fromOnboarding = false) {
     let select = document.getElementById("persona-select");
     let persona = select.value;
+    console.log("Setting persona to:", persona);
+    
     fetch("/set_persona", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -125,19 +354,38 @@ function setPersona() {
     })
     .then(response => response.json())
     .then(data => {
-        console.log(data.status);
+        console.log("Persona set response:", data.status);
         // Only update the active persona when the server confirms the change
         if (data.current_persona) {
             activePersona = data.current_persona;
         }
         updateChat(data.conversation); // Update chat with cleared conversation
         document.getElementById("persona-section").style.display = "none"; // Hide persona section
+        
+        // Update our persona state
+        personaSet = true;
+        
+        // If coming from onboarding, set the scenario now
+        if (fromOnboarding) {
+            setTimeout(() => {
+                setScenario(true); // Pass true to trigger AI first message
+            }, 500);
+        } else {
+            // Check if we can start the chat
+            checkAndTriggerFirstMessage();
+        }
     })
     .catch(error => console.error("Error setting persona:", error));
 }
 
 function clearChat() {
-    console.log("Clear Chat button clicked");
+    console.log("New Chat button clicked");
+    
+    // Reset our state tracking variables
+    personaSet = false;
+    nameSet = false;
+    scenarioSet = false;
+    
     fetch("/clear", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -156,21 +404,39 @@ function clearChat() {
         if (data.current_persona) {
             activePersona = data.current_persona;
         }
+        
+        // Show the onboarding overlay instead of just resetting the inputs
+        checkFirstTimeVisitor();
+        
+        // Reset the form elements (they'll be hidden behind the onboarding overlay)
         document.getElementById("scenario-input").value = "";
-        document.getElementById("persona-section").style.display = "block"; // Show persona section
-        document.getElementById("scenario-section").style.display = "block"; // Show scenario section
-        document.getElementById("clear-chat-button").style.display = "none"; // Hide clear chat button
-        console.log("Chat cleared and input reset");
+        document.getElementById("scenario-input").style.display = "block";
+        document.getElementById("scenario-label").style.display = "block";
+        document.getElementById("set-scenario-button").style.display = "inline-block";
+        document.getElementById("persona-section").style.display = "block";
+        document.getElementById("scenario-section").style.display = "block";
+        document.getElementById("name-section").style.display = "block";
+        document.getElementById("new-chat-button").style.display = "none";
+        console.log("Chat cleared and onboarding displayed");
     })
     .catch(error => {
         console.error("Error clearing chat:", error);
         let chatBox = document.getElementById("chat-box");
         chatBox.innerHTML = "";
+        
+        // Show the onboarding overlay even on error
+        checkFirstTimeVisitor();
+        
+        // Reset the form elements
         document.getElementById("scenario-input").value = "";
-        document.getElementById("persona-section").style.display = "block"; // Show persona section
-        document.getElementById("scenario-section").style.display = "block"; // Show scenario section
-        document.getElementById("clear-chat-button").style.display = "none"; // Hide clear chat button
-        console.log("Forced chat clear due to error");
+        document.getElementById("scenario-input").style.display = "block";
+        document.getElementById("scenario-label").style.display = "block";
+        document.getElementById("set-scenario-button").style.display = "inline-block";
+        document.getElementById("persona-section").style.display = "block";
+        document.getElementById("scenario-section").style.display = "block";
+        document.getElementById("name-section").style.display = "block";
+        document.getElementById("new-chat-button").style.display = "none";
+        console.log("Forced chat clear and onboarding display due to error");
     });
 }
 
@@ -347,8 +613,43 @@ document.getElementById("name-input").addEventListener("keypress", function(even
     }
 });
 
-// You might want to add this to synchronize on page load
-window.addEventListener('DOMContentLoaded', (event) => {
+// Add event listeners for persona selection in onboarding
+document.addEventListener('DOMContentLoaded', function() {
+    // Set up persona option click handlers
+    document.querySelectorAll('.persona-option').forEach(option => {
+        option.addEventListener('click', function() {
+            selectedPersonaInOnboarding = this.getAttribute('data-persona');
+            selectPersonaInOnboarding(selectedPersonaInOnboarding);
+        });
+        
+        // Add keydown event listener to handle Enter key press
+        option.addEventListener('keydown', function(event) {
+            if (event.key === "Enter") {
+                selectedPersonaInOnboarding = this.getAttribute('data-persona');
+                selectPersonaInOnboarding(selectedPersonaInOnboarding);
+                nextOnboardingStep();
+                event.preventDefault();
+            }
+        });
+        
+        // Make personas focusable
+        option.setAttribute('tabindex', '0');
+    });
+    
+    // Add event listener for keypresses in the onboarding overlay
+    document.getElementById('onboarding-overlay').addEventListener('keydown', handleOnboardingKeydown);
+    
+    // Check if this is a first-time visitor
+    checkFirstTimeVisitor();
+    
     // Set the dropdown to match the active persona on load
     document.getElementById("persona-select").value = activePersona;
+    
+    // Reset state tracking on page load
+    personaSet = false;
+    nameSet = false;
+    scenarioSet = false;
+    
+    // Add debug logging
+    console.log("Page loaded. Chat setup state - Name:", nameSet, "Persona:", personaSet, "Scenario:", scenarioSet);
 });

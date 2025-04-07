@@ -7,6 +7,47 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <!-- Onboarding overlay for new users -->
+    <div id="onboarding-overlay" class="onboarding-overlay" {% if session.user_email %}style="display: none;"{% endif %}>
+        <div class="onboarding-content">
+            <h2>Welcome to Spanking Chat!</h2>
+            <p>We're excited to offer you a private, safe AI experience tailored to your spanking needs!</p>
+            
+            <div class="onboarding-step active" data-step="1">
+                <h3>Step 1: Who’s in Trouble — or in Charge?</h3>
+                <p>Choose the persona that matches the bottom-warming fantasy you’re here for:</p>
+                <div class="onboarding-persona-options">
+                    {% for persona in personas %}
+                    <div class="persona-option" data-persona="{{ persona }}">
+                        <div class="persona-icon">{{ persona[0] }}</div>
+                        <div>{{ persona }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button class="onboarding-next-btn" onclick="nextOnboardingStep()">Next</button>
+            </div>
+            
+            <div class="onboarding-step" data-step="2">
+                <h3>Step 2: Set Your Name</h3>
+                <p>Tell us what you'd like to be called during your chat.</p>
+                <form id="onboarding-name-form" onsubmit="nextOnboardingStep(); return false;">
+                    <input type="text" id="onboarding-name" placeholder="Your name">
+                    <button type="submit" class="onboarding-next-btn">Next</button>
+                </form>
+            </div>
+            
+            <div class="onboarding-step" data-step="3">
+                <h3>Step 3: Create Your Scenario</h3>
+                <p>Describe the setting or situation for your chat.</p>
+                <form id="onboarding-scenario-form" onsubmit="completeOnboarding(); return false;">
+                    <input type="text" id="onboarding-scenario" placeholder="e.g., I'm late coming home after curfew">
+                    <p class="hint">Tip: The more details you provide, the more immersive your chat will be!</p>
+                    <button type="submit" class="onboarding-start-btn">Start Chatting!</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="chat-container">
         <!-- Add Patreon link to the top left -->
         <div class="patreon-link">
@@ -46,10 +87,8 @@
             <!--<button onclick="toggleOptionsPane()">Options</button>-->
         </div>
 
-        <!-- Options Pane -->
-        <!--   
-        <div id="options-pane" style="display: none; position: absolute; top: 100px; right: 20px; width: 300px; height: 200px; background: white; border: 1px solid #ccc; box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1); padding: 10px;">
-        </div> -->
+        <!-- New Chat Button - Moved above chat window -->
+        <button id="new-chat-button" onclick="clearChat()" style="display: none; margin: 10px 0;">New Chat</button>
 
         <!-- Chat Display -->
         <div id="chat-box">
@@ -75,7 +114,6 @@
         <!-- Button Container -->
         <div class="button-container">
             <button id="voice-chat-button" onclick="toggleVoiceChat()">Switch to Voice Responses</button>
-            <button id="clear-chat-button" onclick="clearChat()" style="display: none;">Clear Chat</button>
         </div>
     </div>
 
