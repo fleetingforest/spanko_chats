@@ -476,9 +476,15 @@ select {
     }
 }
 
-/* Show the floating button only on mobile devices */
+/* Show the floating button only on mobile devices and only for step 1 */
 @media (max-width: 600px) {
-    .mobile-next-button {
+    /* Only show the floating button for step 1 */
+    #mobile-next-step-1 {
+        display: none; /* Hide by default */
+    }
+    
+    /* Show floating button when step 1 is active */
+    .onboarding-step[data-step="1"].active ~ #mobile-next-step-1 {
         display: flex;
         justify-content: center;
         align-items: center;
