@@ -48,6 +48,7 @@ standard_system_prompt = (
     "Do not assume your character knows everything in the scenario at the start,"
     " unless it makes sense in the context of the scenario that they would."
     "Take care to not repeat yourself and vary your phrases."
+    "The vibe for this is not BDSM but rather spanko."
     "Make sure to use details to make the scenario feel real and immersive. Right now you are in the following roleplay scenario: {}"
 )
 
