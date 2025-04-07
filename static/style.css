@@ -16,10 +16,26 @@ body {
     position: relative;
 }
 
+.login-section {
+    position: absolute;
+    top: 20px;
+    left: 20px;  /* Changed from right to left */
+}
+
+.login-link {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.login-link:hover {
+    text-decoration: underline;
+}
+
+
 .patreon-link {
     position: absolute;
     top: 20px;
-    left: 20px;
+    right: 20px;  /* Changed from left to right */
     z-index: 10; /* Ensure the link is on top */
 }
 
@@ -29,21 +45,6 @@ body {
 }
 
 .patreon-link a:hover {
-    text-decoration: underline;
-}
-
-.login-section {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-}
-
-.login-link {
-    color: #007bff;
-    text-decoration: none;
-}
-
-.login-link:hover {
     text-decoration: underline;
 }
 
