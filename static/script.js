@@ -182,13 +182,58 @@ function updateChat(conversation) {
     conversation.forEach(msg => {
         let messageDiv = document.createElement("div");
         messageDiv.className = msg.role === "user" ? "user-message" : "ai-message";
-        let formattedContent = msg.content
-            .replace(/_(.+?)_/g, (match, p1) => {
-                let capitalized = p1.charAt(0).toUpperCase() + p1.slice(1).toLowerCase();
+        
+        // Apply proper formatting to actions in text
+        // Process the content to handle action formatting properly
+        let content = msg.content;
+        
+        // First remove any name prefixes if they exist
+        const namePrefixes = [
+            "You: ", "Daddy: ", "Mommy: ", "Gaby: ", "Lara: ", 
+            "Sophie: ", "Mr. Levier: ", "Gina: ", "Stewart: ", 
+            "Eli: ", "Kayla: "
+        ];
+        
+        for (const prefix of namePrefixes) {
+            if (content.startsWith(prefix)) {
+                content = content.substring(prefix.length);
+                break;
+            }
+        }
+        
+        // Then handle action formatting
+        let formattedContent = content
+            // Only match underscores that wrap complete action phrases
+            // This will avoid catching standalone underscores or incomplete formatting
+            .replace(/\b_([\w\s,'\-\.;:!?]+?)_\b/g, (match, p1) => {
+                // Capitalize first letter of action text
+                let capitalized = p1.charAt(0).toUpperCase() + p1.slice(1);
+                // Return properly formatted action text
                 return `<i>${capitalized}</i>`;
             })
             .replace(/\n/g, "<br>");
-        messageDiv.innerHTML = formattedContent;  // Remove userName and activePersona here
+        
+        // Add the name prefix for display
+        if (msg.role === "user") {
+            formattedContent = userName + ": " + formattedContent;
+        } else {
+            const characterNames = {
+                "Cute little girl": "Gaby",
+                "Strict girlfriend": "Lara",
+                "Submissive Girlfriend": "Sophie",
+                "Strict teacher": "Mr. Levier",
+                "Babysitter": "Gina",
+                "Daddy": "Daddy",
+                "Mommy": "Mommy",
+                "Mischevious student": "Stewart",
+                "Cute little boy": "Eli",
+                "Bratty teen girl": "Kayla"
+            };
+            const characterName = characterNames[activePersona] || activePersona;
+            formattedContent = characterName + ": " + formattedContent;
+        }
+        
+        messageDiv.innerHTML = formattedContent;
         chatBox.appendChild(messageDiv);
 
         // Add audio control element if voice chat is enabled and audio URL is present

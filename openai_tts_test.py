@@ -25,7 +25,7 @@ PERSONA_VOICES = {
 }
 
 def convert_text_to_audio(text, current_persona):
-    MODEL = "tts-1-hd"  # or use "tts-1-hd" for higher quality
+    MODEL = "gpt-4o-mini-tts"  # or use "tts-1-hd" for higher quality
     headers = {
         "Authorization": f"Bearer {API_KEY}"
     }
