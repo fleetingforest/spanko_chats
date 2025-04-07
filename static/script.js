@@ -52,8 +52,8 @@ function selectPersonaInOnboarding(persona) {
 
 // Handle keydown events in the onboarding overlay
 function handleOnboardingKeydown(event) {
-    // If Enter key is pressed on the first step (persona selection) and not on mobile
-    if (event.key === "Enter" && currentOnboardingStep === 1 && selectedPersonaInOnboarding && !isMobileDevice()) {
+    // If Enter key is pressed on the first step (persona selection)
+    if (event.key === "Enter" && currentOnboardingStep === 1 && selectedPersonaInOnboarding) {
         nextOnboardingStep();
     }
 }
@@ -590,15 +590,13 @@ window.onclick = function(event) {
 
 // Add event listeners
 document.getElementById("message-input").addEventListener("keypress", function(event) {
-    // Only handle Enter key press on non-mobile devices
-    if (event.key === "Enter" && !isMobileDevice()) {
+    if (event.key === "Enter") {
         sendMessage();
     }
 });
 
 document.getElementById("scenario-input").addEventListener("keypress", function(event) {
-    // Only handle Enter key press on non-mobile devices
-    if (event.key === "Enter" && !isMobileDevice()) {
+    if (event.key === "Enter") {
         setScenario();
     }
 });
@@ -610,19 +608,12 @@ document.getElementById("name-form").addEventListener("submit", function(event) 
 
 // Add event listener for name input
 document.getElementById("name-input").addEventListener("keypress", function(event) {
-    // Only handle Enter key press on non-mobile devices
-    if (event.key === "Enter" && !isMobileDevice()) {
+    if (event.key === "Enter") {
         setName();
     }
 });
 
-// Helper function to detect mobile devices
-function isMobileDevice() {
-    return (window.innerWidth <= 768) || 
-           (navigator.maxTouchPoints > 0 && /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
-}
-
-// Add event listeners for persona selection in onboarding
+// Add event listeners for onboarding form inputs that allow Enter key on all devices
 document.addEventListener('DOMContentLoaded', function() {
     // Set up persona option click handlers
     document.querySelectorAll('.persona-option').forEach(option => {
@@ -631,9 +622,9 @@ document.addEventListener('DOMContentLoaded', function() {
             selectPersonaInOnboarding(selectedPersonaInOnboarding);
         });
         
-        // Add keydown event listener to handle Enter key press (only on desktop)
+        // Add keydown event listener to handle Enter key press
         option.addEventListener('keydown', function(event) {
-            if (event.key === "Enter" && !isMobileDevice()) {
+            if (event.key === "Enter") {
                 selectedPersonaInOnboarding = this.getAttribute('data-persona');
                 selectPersonaInOnboarding(selectedPersonaInOnboarding);
                 nextOnboardingStep();

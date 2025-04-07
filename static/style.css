@@ -432,7 +432,9 @@ select {
 
 /* Mobile floating Next button for onboarding */
 .mobile-next-button {
-    display: none; /* Hidden by default */
+    display: flex; /* Show by default on all devices */
+    justify-content: center;
+    align-items: center;
     position: fixed;
     bottom: 20px;
     right: 20px;
@@ -476,24 +478,19 @@ select {
     }
 }
 
-/* Show the floating button only on mobile devices and only for step 1 */
-@media (max-width: 600px) {
-    /* Only show the floating button for step 1 */
-    #mobile-next-step-1 {
-        display: none; /* Hide by default */
-    }
-    
-    /* Show floating button when step 1 is active */
-    .onboarding-step[data-step="1"].active ~ #mobile-next-step-1 {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
-    
-    /* Hide the standard next button on mobile when on step 1 */
-    .onboarding-step[data-step="1"] .onboarding-next-btn {
-        display: none;
-    }
+/* Only show the floating button for step 1 */
+#mobile-next-step-1 {
+    display: none; /* Hide by default */
+}
+
+/* Show floating button when step 1 is active */
+.onboarding-step[data-step="1"].active ~ #mobile-next-step-1 {
+    display: flex;
+}
+
+/* Hide the standard next button when on step 1 since we have the floating button */
+.onboarding-step[data-step="1"] .onboarding-next-btn {
+    display: none;
 }
 
 .disclaimer-link {
