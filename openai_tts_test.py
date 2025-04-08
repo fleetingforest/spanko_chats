@@ -20,7 +20,7 @@ PERSONA_VOICES = {
 }
 
 def convert_text_to_audio(text, current_persona):
-    model = "tts-1-hd"
+    model = "gpt-4o-mini-tts"
     voice = PERSONA_VOICES.get(current_persona, "nova")  # fallback to nova if unknown
 
     headers = {
