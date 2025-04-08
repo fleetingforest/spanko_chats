@@ -665,16 +665,25 @@ def send_message():
     voice_tokens = get_voice_tokens(user_ip)
     if voice_chat_enabled and voice_tokens <= voice_token_limit:
         try:
-            audio_file_path = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
-            key = derive_key(user_ip)
-            encrypted_file_path = encrypt_file(audio_file_path, key)
-            audio_url = url_for('serve_audio', filename=encrypted_file_path)
-            num_chars = len(ai_response)
-            update_voice_tokens(user_ip, num_chars)
-            voice_tokens = get_voice_tokens(user_ip)
-            print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
+            # Get streaming response directly from TTS function
+            stream_response = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
+            if stream_response:
+                # Generate a unique streaming endpoint URL for this response
+                stream_id = str(uuid.uuid4())
+                session[f'stream_{stream_id}'] = {
+                    'text': ai_response,
+                    'persona': current_persona,
+                    'created_at': datetime.now().timestamp()
+                }
+                audio_url = url_for('stream_audio', stream_id=stream_id)
+                
+                # Update voice token usage
+                num_chars = len(ai_response)
+                update_voice_tokens(user_ip, num_chars)
+                voice_tokens = get_voice_tokens(user_ip)
+                print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
         except Exception as e:
-            app.logger.error(f"Error converting text to audio or encrypting: {e}")
+            app.logger.error(f"Error converting text to audio for streaming: {e}")
 
     # Return the updated conversation (excluding system prompt), current persona, and audio URL
     return jsonify({
@@ -835,17 +844,27 @@ def get_first_message():
     voice_tokens = get_voice_tokens(user_ip)
     if voice_chat_enabled and voice_tokens <= voice_token_limit:
         try:
-            audio_file_path = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
-            key = derive_key(user_ip)
-            encrypted_file_path = encrypt_file(audio_file_path, key)
-            audio_url = url_for('serve_audio', filename=encrypted_file_path)
-            num_chars = len(ai_response)
-            update_voice_tokens(user_ip, num_chars)
-            voice_tokens = get_voice_tokens(user_ip)
-            print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
-        except Exception as e:
-            app.logger.error(f"Error converting text to audio or encrypting: {e}")
+            # Get streaming response directly from TTS function
+            stream_response = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
+            if stream_response:
+                # Generate a unique streaming endpoint URL for this response
+                stream_id = str(uuid.uuid4())
+                session[f'stream_{stream_id}'] = {
+                    'text': ai_response,
+                    'persona': current_persona,
+                    'created_at': datetime.now().timestamp()
+                }
 
+                audio_url = url_for('stream_audio', stream_id=stream_id)
+                
+                # Update voice token usage
+                num_chars = len(ai_response)
+                update_voice_tokens(user_ip, num_chars)
+                voice_tokens = get_voice_tokens(user_ip)
+                print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
+        except Exception as e:
+            app.logger.error(f"Error converting text to audio for streaming: {e}")
+    
     # Return the updated conversation (excluding system prompt), current persona, and audio URL
     return jsonify({
         "status": "First message generated!", 
@@ -853,6 +872,35 @@ def get_first_message():
         "current_persona": current_persona,
         "audio_url": audio_url
     })
+
+# Add a new endpoint for streaming audio
+@app.route("/stream_audio/<stream_id>")
+def stream_audio(stream_id):
+    stream_data = session.get(f'stream_{stream_id}')
+    if not stream_data:
+        return jsonify({"error": "Stream not found or expired"}), 404
+    
+    # Get the text and persona from the session
+    text = stream_data['text']
+    persona = stream_data['persona']
+    
+    # Create a generator to stream the audio directly
+    def generate():
+        try:
+            # Get fresh streaming response at request time
+            with openai_tts_test.convert_text_to_audio(text, persona) as response:
+                for chunk in response.iter_bytes():
+                    yield chunk
+            # Clean up the session after streaming is complete
+        except Exception as e:
+            app.logger.error(f"Error streaming audio: {e}")
+            session.pop(f'stream_{stream_id}', None)
+    
+    # Return a streaming response to the client
+
+    session.pop(f'stream_{stream_id}', None)
+
+    return Response(generate(), mimetype="audio/opus")
 
 def delete_old_audio_files():
     while True:

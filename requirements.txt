@@ -10,3 +10,5 @@ flask-mail
 firebase-admin
 patreon
 passlib
+httpx
+sounddevice

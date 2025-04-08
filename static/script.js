@@ -10,6 +10,28 @@ let personaSet = false;
 let nameSet = false;
 let scenarioSet = false;
 
+// Utility function to create audio elements with autoplay
+function createAudioElement(audioUrl, container) {
+    let audioDiv = document.createElement("div");
+    audioDiv.className = "ai-message";
+    let audioControl = document.createElement("audio");
+    audioControl.controls = true;
+    audioControl.autoplay = true;
+    audioControl.src = audioUrl;
+    
+    // Some browsers require interaction before autoplay works
+    // This helps ensure autoplay in those cases
+    audioControl.muted = true;
+    setTimeout(() => {
+        audioControl.muted = false;
+        audioControl.play().catch(e => console.log("Autoplay prevented by browser:", e));
+    }, 100);
+    
+    audioDiv.appendChild(audioControl);
+    container.appendChild(audioDiv);
+    return audioDiv;
+}
+
 // Check if this is a first-time visitor
 function checkFirstTimeVisitor() {
     // Always show the onboarding overlay regardless of whether the user has visited before
@@ -286,13 +308,7 @@ function sendMessage() {
         chatBox.removeChild(typingDiv);
         if (voiceChatEnabled && data.audio_url) {
             // Add audio control element
-            let audioDiv = document.createElement("div");
-            audioDiv.className = "ai-message";
-            let audioControl = document.createElement("audio");
-            audioControl.controls = true;
-            audioControl.src = data.audio_url;
-            audioDiv.appendChild(audioControl);
-            chatBox.appendChild(audioDiv);
+            createAudioElement(data.audio_url, chatBox);
         } else {
             updateChat(data.conversation);
         }
@@ -366,13 +382,7 @@ function getAiFirstMessage() {
         chatBox.removeChild(typingDiv);
         if (voiceChatEnabled && data.audio_url) {
             // Add audio control element
-            let audioDiv = document.createElement("div");
-            audioDiv.className = "ai-message";
-            let audioControl = document.createElement("audio");
-            audioControl.controls = true;
-            audioControl.src = data.audio_url;
-            audioDiv.appendChild(audioControl);
-            chatBox.appendChild(audioDiv);
+            createAudioElement(data.audio_url, chatBox);
         } else {
             updateChat(data.conversation);
         }
@@ -610,13 +620,7 @@ function updateChat(conversation) {
 
         // Add audio control element if voice chat is enabled and audio URL is present
         if (voiceChatEnabled && msg.audio_url) {
-            let audioDiv = document.createElement("div");
-            audioDiv.className = "ai-message";
-            let audioControl = document.createElement("audio");
-            audioControl.controls = true;
-            audioControl.src = msg.audio_url;
-            audioDiv.appendChild(audioControl);
-            chatBox.appendChild(audioDiv);
+            createAudioElement(msg.audio_url, chatBox);
         }
     });
 

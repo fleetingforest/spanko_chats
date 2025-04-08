@@ -1,46 +1,44 @@
-import openai
-import requests
 import os
-from pydub import AudioSegment
-from datetime import datetime
+import httpx
 
-# Replace with your OpenAI API key
+# OpenAI API config
 API_KEY = os.getenv("OPENAI_API_KEY")
-
-# OpenAI TTS API endpoint
 API_URL = "https://api.openai.com/v1/audio/speech"
 
-# Map personas to OpenAI TTS voices
+# Voice mapping
 PERSONA_VOICES = {
-    "Daddy": "onyx",           # Deep, authoritative male voice for a strict Italian father
-    "Mommy": "nova",           # Bright, warm female voice for a nurturing yet firm mother
-    "Babysitter": "shimmer",   # High-energy, slightly playful female voice for Gina
-    "Bratty teen girl": "nova",# Youthful, sassy female voice for a rebellious teen
-    "Strict girlfriend": "shimmer", # Confident, fiery female voice for Lara
-    "Submissive Girlfriend": "alloy", # Soft, gentle voice for shy Sophie
-    "Strict teacher": "echo",  # Firm, no-nonsense
-    "Cute little girl": "sage", # Sweet, innocent voice
-    "Mischevious student": "fable", # Playful, mischievous voice
+    "Daddy": "onyx",
+    "Mommy": "nova",
+    "Babysitter": "shimmer",
+    "Bratty teen girl": "nova",
+    "Strict girlfriend": "shimmer",
+    "Submissive Girlfriend": "alloy",
+    "Strict teacher": "echo",
+    "Cute little girl": "sage",
+    "Mischevious student": "fable",
     "Cute little boy": "alloy"
 }
 
 def convert_text_to_audio(text, current_persona):
-    MODEL = "gpt-4o-mini-tts"  # or use "tts-1-hd" for higher quality
+    model = "tts-1-hd"
+    voice = PERSONA_VOICES.get(current_persona, "nova")  # fallback to nova if unknown
+
     headers = {
-        "Authorization": f"Bearer {API_KEY}"
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
     }
+
     payload = {
-        "model": MODEL,
+        "model": model,
         "input": text,
-        "voice": PERSONA_VOICES[current_persona]  # Available voices: alloy, echo, fable, onyx, nova, shimmer
+        "voice": voice,
+        "response_format": "opus",  # for streaming + browser support
+        "speed": 1.0  # default speed, can be adjusted between 0.25 and 4.0
     }
-    response = requests.post(API_URL, headers=headers, json=payload)
-    if response.status_code == 200:
-        audio_data = response.content
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        output_file = os.path.join("static", f"openai_output_{timestamp}.mp3")
-        with open(output_file, "wb") as f:
-            f.write(audio_data)
-        return output_file
-    else:
-        raise Exception(f"Error: {response.status_code}, {response.text}")
+
+    try:
+        # Return the raw streaming response object
+        return httpx.stream("POST", API_URL, headers=headers, json=payload)
+    except Exception as e:
+        print(f"Error in TTS conversion: {str(e)}")
+        return None
