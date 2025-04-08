@@ -3,6 +3,7 @@ let activePersona = "Daddy"; // Default to match the server's default
 let userName = "You"; // Default user name
 let voiceChatEnabled = false;
 let selectedPersonaInOnboarding = null;
+let selectedModeInOnboarding = null;
 let currentOnboardingStep = 1;
 // Add setup state tracking variables
 let personaSet = false;
@@ -17,6 +18,7 @@ function checkFirstTimeVisitor() {
     // Reset onboarding state
     currentOnboardingStep = 1;
     selectedPersonaInOnboarding = null;
+    selectedModeInOnboarding = null;
     
     // Show first step, hide others
     document.querySelectorAll('.onboarding-step').forEach(step => {
@@ -26,6 +28,10 @@ function checkFirstTimeVisitor() {
     
     // Clear any previous selections
     document.querySelectorAll('.persona-option').forEach(option => {
+        option.classList.remove('selected');
+    });
+    
+    document.querySelectorAll('.mode-option').forEach(option => {
         option.classList.remove('selected');
     });
     
@@ -50,10 +56,27 @@ function selectPersonaInOnboarding(persona) {
     selectedPersonaInOnboarding = persona;
 }
 
+// Handle chat mode selection in onboarding
+function selectModeInOnboarding(mode) {
+    // Clear previous selections
+    document.querySelectorAll('.mode-option').forEach(option => {
+        option.classList.remove('selected');
+    });
+    
+    // Select the clicked mode
+    event.currentTarget.classList.add('selected');
+    selectedModeInOnboarding = mode;
+}
+
 // Handle keydown events in the onboarding overlay
 function handleOnboardingKeydown(event) {
     // If Enter key is pressed on the first step (persona selection)
     if (event.key === "Enter" && currentOnboardingStep === 1 && selectedPersonaInOnboarding) {
+        nextOnboardingStep();
+    }
+    
+    // If Enter key is pressed on the third step (chat mode selection)
+    if (event.key === "Enter" && currentOnboardingStep === 3 && selectedModeInOnboarding) {
         nextOnboardingStep();
     }
 }
@@ -75,6 +98,11 @@ function nextOnboardingStep() {
         userName = nameInput.value.trim();
     }
     
+    if (currentOnboardingStep === 3 && !selectedModeInOnboarding) {
+        alert("Please select a chat mode to continue.");
+        return;
+    }
+    
     // Hide current step
     document.querySelector(`.onboarding-step[data-step="${currentOnboardingStep}"]`).classList.remove('active');
     
@@ -91,7 +119,7 @@ function nextOnboardingStep() {
     }
 }
 
-// Complete onboarding and start chat
+// Store the voice chat mode in localStorage when redirecting
 function completeOnboarding() {
     const scenarioInput = document.getElementById('onboarding-scenario');
     const scenario = scenarioInput.value.trim();
@@ -100,6 +128,59 @@ function completeOnboarding() {
         alert("Please describe a scenario to continue.");
         return;
     }
+    
+    // Store settings in localStorage
+    localStorage.setItem('userName', userName);
+    localStorage.setItem('selectedPersona', selectedPersonaInOnboarding);
+    localStorage.setItem('scenario', scenario);
+    
+    // Also store the flag indicating scenario was set to prevent onboarding on redirect
+    localStorage.setItem('scenarioSet', 'true');
+    
+    // Store voice chat preference in localStorage
+    localStorage.setItem('voiceChatEnabled', selectedModeInOnboarding === 'voice' ? 'true' : 'false');
+    
+    // Check if we need to redirect based on selected mode
+    const currentPath = window.location.pathname;
+    const isVoiceChatPage = currentPath.includes('voice_chat');
+    const shouldBeVoiceChatPage = selectedModeInOnboarding === 'voice';
+    
+    if (shouldBeVoiceChatPage && !isVoiceChatPage) {
+        // First, try to set the scenario in the current page before redirecting
+        fetch("/set_scenario", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scenario: scenario }),
+        })
+        .then(() => {
+            // If we need to switch to voice chat, redirect
+            window.location.href = "/voice_chat";
+        })
+        .catch(() => {
+            // Even if setting scenario fails, still redirect
+            window.location.href = "/voice_chat";
+        });
+        return;
+    } else if (!shouldBeVoiceChatPage && isVoiceChatPage) {
+        // First, try to set the scenario in the current page before redirecting
+        fetch("/set_scenario", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scenario: scenario }),
+        })
+        .then(() => {
+            // If we need to switch to text chat, redirect
+            window.location.href = "/";
+        })
+        .catch(() => {
+            // Even if setting scenario fails, still redirect
+            window.location.href = "/";
+        });
+        return;
+    }
+    
+    // If we're already on the correct page, complete the onboarding
+    voiceChatEnabled = shouldBeVoiceChatPage;
     
     // Set the persona in the dropdown
     document.getElementById('persona-select').value = selectedPersonaInOnboarding;
@@ -118,8 +199,9 @@ function completeOnboarding() {
     
     // Set our state tracking variables
     nameSet = true;
+    personaSet = true;
     
-    // Trigger the setPersona and setScenario functions
+    // Trigger the setPersona function which will also handle the scenario
     setPersona(true); // Pass true to indicate we're in the onboarding flow
 }
 
@@ -345,6 +427,13 @@ function setScenario(triggerAiMessage = false) {
 function setPersona(fromOnboarding = false) {
     let select = document.getElementById("persona-select");
     let persona = select.value;
+    
+    // Don't proceed if persona is empty or undefined
+    if (!persona) {
+        console.error("Attempted to set empty persona, aborting request");
+        return;
+    }
+    
     console.log("Setting persona to:", persona);
     
     fetch("/set_persona", {
@@ -380,12 +469,17 @@ function setPersona(fromOnboarding = false) {
 
 function clearChat() {
     console.log("New Chat button clicked");
-    
+
     // Reset our state tracking variables
     personaSet = false;
     nameSet = false;
     scenarioSet = false;
-    
+
+    // Clear saved settings from localStorage
+    localStorage.removeItem('userName');
+    localStorage.removeItem('selectedPersona');
+    localStorage.removeItem('scenario');
+
     fetch("/clear", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -404,10 +498,10 @@ function clearChat() {
         if (data.current_persona) {
             activePersona = data.current_persona;
         }
-        
+
         // Show the onboarding overlay instead of just resetting the inputs
         checkFirstTimeVisitor();
-        
+
         // Reset the form elements (they'll be hidden behind the onboarding overlay)
         document.getElementById("scenario-input").value = "";
         document.getElementById("scenario-input").style.display = "block";
@@ -423,10 +517,10 @@ function clearChat() {
         console.error("Error clearing chat:", error);
         let chatBox = document.getElementById("chat-box");
         chatBox.innerHTML = "";
-        
+
         // Show the onboarding overlay even on error
         checkFirstTimeVisitor();
-        
+
         // Reset the form elements
         document.getElementById("scenario-input").value = "";
         document.getElementById("scenario-input").style.display = "block";
@@ -547,36 +641,7 @@ function convertToAudio() {
     });
 }
 
-function toggleVoiceChat() {
-    fetch("/toggle_voice_chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-    })
-    .then(response => response.json())
-    .then(data => {
-        voiceChatEnabled = data.voice_chat_enabled;
-        console.log("Voice chat enabled:", voiceChatEnabled);
-        // Change button text based on the current state
-        let voiceChatButton = document.getElementById("voice-chat-button");
-        if (voiceChatEnabled) {
-            voiceChatButton.textContent = "Switch to Text Responses";
-        } else {
-            voiceChatButton.textContent = "Switch to Voice Responses";
-        }
-        // Retain audio elements in the chat history
-        if (!voiceChatEnabled) {
-            let chatBox = document.getElementById("chat-box");
-            let audioElements = chatBox.querySelectorAll("audio");
-            audioElements.forEach(audio => {
-                let audioDiv = document.createElement("div");
-                audioDiv.className = "ai-message";
-                audioDiv.appendChild(audio);
-                chatBox.appendChild(audioDiv);
-            });
-        }
-    })
-    .catch(error => console.error("Error toggling voice chat:", error));
-}
+// Function removed as per requirements
 
 function showDisclaimer() {
     document.getElementById("disclaimer-modal").style.display = "block";
@@ -619,15 +684,156 @@ document.getElementById("name-input").addEventListener("keypress", function(even
     }
 });
 
-// Add event listeners for onboarding form inputs that allow Enter key on all devices
+// New function to load saved settings
+function loadSavedSettings() {
+    const savedUserName = localStorage.getItem('userName');
+    const savedPersona = localStorage.getItem('selectedPersona');
+    const savedScenario = localStorage.getItem('scenario');
+    const wasScenarioSet = localStorage.getItem('scenarioSet');
+    
+    if (savedUserName && savedPersona && savedScenario) {
+        console.log("Found saved settings, loading them...");
+        
+        // Set the saved values to our variables
+        userName = savedUserName;
+        selectedPersonaInOnboarding = savedPersona;
+        activePersona = savedPersona;
+        
+        // Set form values if elements exist
+        const nameInput = document.getElementById('name-input');
+        const personaSelect = document.getElementById('persona-select');
+        const scenarioInput = document.getElementById('scenario-input');
+        
+        if (nameInput) nameInput.value = savedUserName;
+        if (personaSelect) personaSelect.value = savedPersona;
+        if (scenarioInput) scenarioInput.value = savedScenario;
+        
+        // Hide onboarding since we have all the info
+        const onboardingOverlay = document.getElementById('onboarding-overlay');
+        if (onboardingOverlay) onboardingOverlay.style.display = 'none';
+        
+        // Hide setup sections since we have the info
+        const nameSection = document.getElementById('name-section');
+        const personaSection = document.getElementById('persona-section');
+        const scenarioLabel = document.getElementById('scenario-label');
+        const scenarioSection = document.getElementById('scenario-section');
+        const scenarioButton = document.getElementById('set-scenario-button');
+        
+        if (nameSection) nameSection.style.display = 'none';
+        if (personaSection) personaSection.style.display = 'none';
+        
+        // If scenario was previously set, hide the scenario input section
+        if (wasScenarioSet === 'true') {
+            if (scenarioLabel) scenarioLabel.style.display = 'none';
+            if (scenarioInput) scenarioInput.style.display = 'none';
+            if (scenarioButton) scenarioButton.style.display = 'none';
+            scenarioSet = true;
+        }
+        
+        // Set our state tracking variables
+        nameSet = true;
+        personaSet = true;
+        
+        // Note: We don't call setPersona() here anymore, we'll do that later after the DOM is fully ready
+        
+        return true;
+    }
+    
+    return false;
+}
+
+// Add function to trace the empty persona request
+function debugRequest(url, method, body) {
+    // Clone the original fetch function
+    const originalFetch = window.fetch;
+    
+    // Override the fetch function
+    window.fetch = function(input, init) {
+        // Check if this is a request to set_persona
+        if (input === "/set_persona" && init && init.method === "POST") {
+            const bodyContent = JSON.parse(init.body);
+            console.log("SET_PERSONA REQUEST DETECTED:", {
+                url: input,
+                method: init.method,
+                persona: bodyContent.persona,
+                stackTrace: new Error().stack
+            });
+        }
+        
+        // Call the original fetch function
+        return originalFetch.apply(this, arguments);
+    };
+    
+    // Let this function run for 10 seconds then restore original fetch
+    setTimeout(() => {
+        window.fetch = originalFetch;
+        console.log("Fetch debugging disabled");
+    }, 10000);
+}
+
+// Add logging to detect page transitions
 document.addEventListener('DOMContentLoaded', function() {
+    console.log("DOMContentLoaded event triggered");
+    
+    // Check if we should be in voice chat mode based on localStorage
+    const savedVoiceChatMode = localStorage.getItem('voiceChatEnabled');
+    if (savedVoiceChatMode !== null) {
+        // Set the voice chat mode based on the stored value
+        voiceChatEnabled = savedVoiceChatMode === 'true';
+        console.log("Voice chat enabled from localStorage:", voiceChatEnabled);
+    } else {
+        // Set voice chat mode based on current URL path
+        voiceChatEnabled = window.location.pathname.includes('voice_chat');
+        console.log("Voice chat enabled based on URL:", voiceChatEnabled);
+    }
+    
+    // Enable fetch debugging
+    debugRequest();
+    
+    // Set the dropdown to match the active persona on load
+    // IMPORTANT: Do this before any other operations to ensure a valid selection
+    const personaSelect = document.getElementById("persona-select");
+    if (personaSelect) {
+        personaSelect.value = personaSelect.value || activePersona;
+    }
+    
+    // First try to load saved settings
+    const hasSavedSettings = loadSavedSettings();
+
+    if (!hasSavedSettings) {
+        console.log("No saved settings found, showing onboarding overlay");
+        // Only show first-time setup if we don't have saved settings
+        checkFirstTimeVisitor();
+    } else {
+        console.log("Saved settings loaded successfully, hiding onboarding overlay");
+        // Hide the onboarding overlay explicitly if settings are loaded
+        const onboardingOverlay = document.getElementById('onboarding-overlay');
+        if (onboardingOverlay) {
+            onboardingOverlay.style.display = 'none';
+        }
+
+        // Apply the loaded settings to the page
+        const scenarioInput = document.getElementById('scenario-input');
+        const nameInput = document.getElementById('name-input');
+
+        if (scenarioInput) {
+            scenarioInput.value = localStorage.getItem('scenario');
+        }
+
+        if (nameInput) {
+            nameInput.value = localStorage.getItem('userName');
+        }
+
+        // We handle setting the persona later
+    }
+
     // Set up persona option click handlers
     document.querySelectorAll('.persona-option').forEach(option => {
         option.addEventListener('click', function() {
             selectedPersonaInOnboarding = this.getAttribute('data-persona');
             selectPersonaInOnboarding(selectedPersonaInOnboarding);
         });
-        
+
         // Add keydown event listener to handle Enter key press
         option.addEventListener('keydown', function(event) {
             if (event.key === "Enter") {
@@ -637,25 +843,92 @@ document.addEventListener('DOMContentLoaded', function() {
                 event.preventDefault();
             }
         });
-        
+
         // Make personas focusable
         option.setAttribute('tabindex', '0');
     });
-    
+
+    // Set up mode option click handlers
+    document.querySelectorAll('.mode-option').forEach(option => {
+        option.addEventListener('click', function() {
+            selectedModeInOnboarding = this.getAttribute('data-mode');
+            selectModeInOnboarding(selectedModeInOnboarding);
+        });
+
+        // Add keydown event listener to handle Enter key press
+        option.addEventListener('keydown', function(event) {
+            if (event.key === "Enter") {
+                selectedModeInOnboarding = this.getAttribute('data-mode');
+                selectModeInOnboarding(selectedModeInOnboarding);
+                nextOnboardingStep();
+                event.preventDefault();
+            }
+        });
+    });
+
     // Add event listener for keypresses in the onboarding overlay
     document.getElementById('onboarding-overlay').addEventListener('keydown', handleOnboardingKeydown);
-    
-    // Check if this is a first-time visitor
-    checkFirstTimeVisitor();
-    
-    // Set the dropdown to match the active persona on load
-    document.getElementById("persona-select").value = activePersona;
-    
+
+    // IMPORTANT: We only call checkFirstTimeVisitor once, and only if we don't have saved settings
+    // Removed second call to checkFirstTimeVisitor() that was causing double initialization
+
     // Reset state tracking on page load
     personaSet = false;
     nameSet = false;
     scenarioSet = false;
-    
+
+    // Wait for the DOM to be fully set up before triggering persona-related actions
+    setTimeout(() => {
+        // Now that everything is initialized, trigger persona loading if we have saved settings
+        if (hasSavedSettings) {
+            const savedPersona = localStorage.getItem('selectedPersona');
+            const savedScenario = localStorage.getItem('scenario');
+            
+            if (savedPersona && personaSelect) {
+                personaSelect.value = savedPersona;
+                
+                // First set the persona
+                setPersona(true); 
+                
+                // Then ensure the scenario is set in the backend if it was previously set
+                if (localStorage.getItem('scenarioSet') === 'true' && savedScenario) {
+                    // Set the scenario in the backend
+                    fetch("/set_scenario", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ scenario: savedScenario }),
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log("Scenario restored on page transition:", data.status);
+                        scenarioSet = true;
+                        
+                        // Show the new chat button since we're resuming a chat
+                        document.getElementById("new-chat-button").style.display = "block";
+                        
+                        // Request the first AI message
+                        setTimeout(() => {
+                            getAiFirstMessage();
+                        }, 500);
+                    })
+                    .catch(error => console.error("Error setting scenario during transition:", error));
+                }
+            }
+        }
+    }, 100);
+
     // Add debug logging
     console.log("Page loaded. Chat setup state - Name:", nameSet, "Persona:", personaSet, "Scenario:", scenarioSet);
+
+    // Let the client tell us whether voice chat is enabled
+    fetch("/toggle_voice_chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voice_chat_enabled: voiceChatEnabled }),
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log("Voice chat mode set on server:", data.voice_chat_enabled);
+    })
+    .catch(error => console.error("Error setting voice chat mode:", error));
 });

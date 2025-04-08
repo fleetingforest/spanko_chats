@@ -93,14 +93,56 @@
     align-items: center;
 }
 
-.persona-option:hover {
+.persona-option:hover, .mode-option:hover {
     background-color: rgba(138, 60, 200, 0.15);
     transform: translateY(-3px);
 }
 
-.persona-option.selected {
+.persona-option.selected, .mode-option.selected {
     border-color: var(--primary-color);
     background-color: rgba(138, 60, 200, 0.2);
+}
+
+.onboarding-mode-options {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.mode-option {
+    background-color: rgba(138, 60, 200, 0.1);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    padding: 15px;
+    width: 180px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.mode-icon {
+    width: 50px;
+    height: 50px;
+    background-color: var(--primary-color);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.mode-description {
+    font-size: 12px;
+    color: var(--light-text);
+    margin-top: 5px;
+    text-align: center;
 }
 
 .persona-icon {

@@ -503,6 +503,22 @@ def index():
     
     return render_template("chat.html", messages=conversation[1:], personas=list(PERSONAS.keys()), current_persona=current_persona, patreon_linked=patreon_linked)
 
+@app.route("/voice_chat")
+def voice_chat():
+    global conversation, current_persona, scenario, voice_chat_enabled
+    # Reset conversation and scenario on page load, keep current persona
+    conversation = [{"role": "system", "content": PERSONAS[current_persona].format("")}]
+    scenario = ""
+    voice_chat_enabled = True  # Enable voice chat by default for this route
+    print("Voice chat page loaded with persona:", current_persona)
+    
+    patreon_linked = False
+    if 'user_email' in session:
+        user_email = session['user_email']
+        patreon_linked = get_user_patreon_linked(user_email)
+    
+    return render_template("voice_chat.html", messages=conversation[1:], personas=list(PERSONAS.keys()), current_persona=current_persona, patreon_linked=patreon_linked)
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -562,7 +578,14 @@ def set_scenario():
 @app.route("/toggle_voice_chat", methods=["POST"])
 def toggle_voice_chat():
     global voice_chat_enabled
-    voice_chat_enabled = not voice_chat_enabled
+    # Accept a parameter from the client to set the voice chat mode explicitly
+    if request.json and 'voice_chat_enabled' in request.json:
+        voice_chat_enabled = request.json['voice_chat_enabled']
+    else:
+        # Fall back to toggling if no explicit value is provided
+        voice_chat_enabled = not voice_chat_enabled
+    
+    print(f"Voice chat mode set to: {voice_chat_enabled}")
     return jsonify({"voice_chat_enabled": voice_chat_enabled})
 
 @app.route("/send", methods=["POST"])
