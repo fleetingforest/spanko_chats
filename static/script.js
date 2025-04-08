@@ -660,15 +660,29 @@ window.onclick = function(event) {
 }
 
 // Add event listeners
-document.getElementById("message-input").addEventListener("keypress", function(event) {
+document.getElementById("message-input").addEventListener("keydown", function(event) {
     if (event.key === "Enter") {
-        sendMessage();
+        if (event.shiftKey) {
+            // For Shift+Enter: Allow default behavior (line break)
+            return true;
+        } else {
+            // For Enter without Shift: Send message
+            event.preventDefault(); // Prevent default to avoid line break
+            sendMessage();
+        }
     }
 });
 
-document.getElementById("scenario-input").addEventListener("keypress", function(event) {
+document.getElementById("scenario-input").addEventListener("keydown", function(event) {
     if (event.key === "Enter") {
-        setScenario();
+        if (event.shiftKey) {
+            // For Shift+Enter: Allow default behavior (line break)
+            return true;
+        } else {
+            // For Enter without Shift: Set scenario
+            event.preventDefault(); // Prevent default to avoid line break
+            setScenario();
+        }
     }
 });
 
@@ -678,9 +692,16 @@ document.getElementById("name-form").addEventListener("submit", function(event) 
 });
 
 // Add event listener for name input
-document.getElementById("name-input").addEventListener("keypress", function(event) {
+document.getElementById("name-input").addEventListener("keydown", function(event) {
     if (event.key === "Enter") {
-        setName();
+        if (event.shiftKey) {
+            // For Shift+Enter: Allow default behavior (line break)
+            return true;
+        } else {
+            // For Enter without Shift: Set name
+            event.preventDefault(); // Prevent default to avoid line break
+            setName();
+        }
     }
 });
 

@@ -131,11 +131,33 @@
         </div>
 
         <!-- Message Input -->
-        <input type="text" id="message-input" placeholder="Type your message...">
+        <textarea id="message-input" placeholder="Type your message..." rows="1"></textarea>
         <button onclick="sendMessage()">Send</button>
     </div>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <!-- Add script for auto-resizing textareas -->
+    <script>
+        // Auto-resize textarea as user types
+        document.getElementById('message-input').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+        
+        // Reset height when message is sent
+        function resetTextareaHeight() {
+            const textarea = document.getElementById('message-input');
+            textarea.style.height = 'auto';
+        }
+        
+        // Modify sendMessage function to also reset textarea height
+        const originalSendMessage = sendMessage;
+        sendMessage = function() {
+            originalSendMessage();
+            resetTextareaHeight();
+        };
+    </script>
 
     <!-- Disclaimer Link -->
     <div class="disclaimer-link">
