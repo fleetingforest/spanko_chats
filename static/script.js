@@ -146,6 +146,9 @@ function completeOnboarding() {
     const shouldBeVoiceChatPage = selectedModeInOnboarding === 'voice';
     
     if (shouldBeVoiceChatPage && !isVoiceChatPage) {
+        // Set the internal redirect flag before redirecting
+        isInternalRedirect = true;
+        
         // First, try to set the scenario in the current page before redirecting
         fetch("/set_scenario", {
             method: "POST",
@@ -162,6 +165,9 @@ function completeOnboarding() {
         });
         return;
     } else if (!shouldBeVoiceChatPage && isVoiceChatPage) {
+        // Set the internal redirect flag before redirecting
+        isInternalRedirect = true;
+        
         // First, try to set the scenario in the current page before redirecting
         fetch("/set_scenario", {
             method: "POST",
@@ -952,4 +958,36 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log("Voice chat mode set on server:", data.voice_chat_enabled);
     })
     .catch(error => console.error("Error setting voice chat mode:", error));
+});
+
+// Function to clear all saved information when user leaves the page
+function clearSavedInformation() {
+    // Clear all saved settings from localStorage
+    localStorage.removeItem('userName');
+    localStorage.removeItem('selectedPersona');
+    localStorage.removeItem('scenario');
+    localStorage.removeItem('scenarioSet');
+    localStorage.removeItem('voiceChatEnabled');
+    console.log("Cleared all saved user information");
+}
+
+// Track if we're doing an internal redirect between chat pages
+let isInternalRedirect = false;
+
+// Add event listener for page unload/reload
+window.addEventListener('beforeunload', function(event) {
+    // Don't clear data if we're doing an internal redirect between chat modes
+    if (!isInternalRedirect) {
+        clearSavedInformation();
+    } else {
+        // Reset the flag - this won't actually happen during a real redirect
+        // but helps if the navigation is cancelled
+        isInternalRedirect = false;
+    }
+});
+
+// Add event listener when a new page is being loaded (navigation started)
+window.addEventListener('pagehide', function() {
+    // Reset the flag when the page is actually unloaded
+    isInternalRedirect = false;
 });
