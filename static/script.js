@@ -469,6 +469,12 @@ function updateChat(conversation) {
         
         // Then handle action formatting
         let formattedContent = content
+            // Format text between asterisks as italics with capitalized first letter
+            .replace(/\*([\w\s,'\-\.;:!?]+?)\*/g, (match, p1) => {
+                // Capitalize first letter of asterisk-wrapped text
+                let capitalized = p1.charAt(0).toUpperCase() + p1.slice(1);
+                return `<i>${capitalized}</i>`;
+            })
             // Only match underscores that wrap complete action phrases
             // This will avoid catching standalone underscores or incomplete formatting
             .replace(/\b_([\w\s,'\-\.;:!?]+?)_\b/g, (match, p1) => {
