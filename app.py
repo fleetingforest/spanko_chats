@@ -899,14 +899,12 @@ def stream_audio(stream_id):
     # Return a streaming response to the client
     session.pop(f'stream_{stream_id}', None)
 
-    # Use audio/ogg with Opus codec explicitly specified for better mobile compatibility
+    # Use audio/mpeg for MP3 format which has universal browser support
     return Response(
         generate(),
-        mimetype="audio/ogg; codecs=opus",
+        mimetype="audio/mpeg",
         headers={
-            "Content-Disposition": "inline; filename=audio.ogg",
-            "Cache-Control": "no-cache",
-            "Transfer-Encoding": "chunked"
+            "Content-Disposition": "inline; filename=audio.mp3"
         }
 )
 

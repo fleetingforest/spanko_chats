@@ -32,7 +32,7 @@ def convert_text_to_audio(text, current_persona):
         "model": model,
         "input": text,
         "voice": voice,
-        "response_format": "opus",  # for streaming + browser support
+        "response_format": "mp3",  # Changed from opus to mp3 for better mobile compatibility
         "speed": 1.0  # default speed, can be adjusted between 0.25 and 4.0
     }
 
