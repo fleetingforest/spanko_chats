@@ -168,8 +168,9 @@ function completeOnboarding() {
     const shouldBeVoiceChatPage = selectedModeInOnboarding === 'voice';
     
     if (shouldBeVoiceChatPage && !isVoiceChatPage) {
-        // Set the internal redirect flag before redirecting
+        // Set the internal redirect flag before redirecting - both local and in localStorage
         isInternalRedirect = true;
+        localStorage.setItem('isInternalRedirect', 'true');
         
         // First, try to set the scenario in the current page before redirecting
         fetch("/set_scenario", {
@@ -187,8 +188,9 @@ function completeOnboarding() {
         });
         return;
     } else if (!shouldBeVoiceChatPage && isVoiceChatPage) {
-        // Set the internal redirect flag before redirecting
+        // Set the internal redirect flag before redirecting - both local and in localStorage
         isInternalRedirect = true;
+        localStorage.setItem('isInternalRedirect', 'true');
         
         // First, try to set the scenario in the current page before redirecting
         fetch("/set_scenario", {
@@ -806,6 +808,14 @@ function debugRequest(url, method, body) {
 document.addEventListener('DOMContentLoaded', function() {
     console.log("DOMContentLoaded event triggered");
     
+    // Check if we just redirected from another chat mode
+    const isRedirecting = localStorage.getItem('isInternalRedirect') === 'true';
+    if (isRedirecting) {
+        console.log("Detected internal redirect between chat modes");
+        // Clear the redirect flag now that we've detected it
+        localStorage.removeItem('isInternalRedirect');
+    }
+    
     // Check if we should be in voice chat mode based on localStorage
     const savedVoiceChatMode = localStorage.getItem('voiceChatEnabled');
     if (savedVoiceChatMode !== null) {
@@ -829,7 +839,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // First try to load saved settings
-    const hasSavedSettings = loadSavedSettings();
+    const hasSavedSettings = loadSavedSettings() || isRedirecting;
 
     if (!hasSavedSettings) {
         console.log("No saved settings found, showing onboarding overlay");
@@ -980,8 +990,11 @@ let isInternalRedirect = false;
 
 // Function to handle page unload/refresh events
 function handlePageUnload() {
+    // Check localStorage for the redirect flag
+    const isRedirecting = localStorage.getItem('isInternalRedirect') === 'true';
+    
     // Don't clear data if we're doing an internal redirect between chat modes
-    if (!isInternalRedirect) {
+    if (!isInternalRedirect && !isRedirecting) {
         clearSavedInformation();
         console.log("Page unloading: localStorage cleared");
     } else {
@@ -998,7 +1011,8 @@ window.addEventListener('pagehide', handlePageUnload);
 
 // Add event listener when a new page is being loaded (navigation started)
 window.addEventListener('unload', function() {
-    // Final reset of the flag when the page is actually unloaded
+    // Final reset of the local flag when the page is actually unloaded
+    // (but don't clear the localStorage flag here - that gets cleared after the new page loads)
     isInternalRedirect = false;
-    console.log("Page unloaded: isInternalRedirect reset");
+    console.log("Page unloaded: local isInternalRedirect reset");
 });

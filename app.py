@@ -897,7 +897,6 @@ def stream_audio(stream_id):
             session.pop(f'stream_{stream_id}', None)
     
     # Return a streaming response to the client
-
     session.pop(f'stream_{stream_id}', None)
 
     return Response(generate(), mimetype="audio/opus")
