@@ -900,7 +900,7 @@ def stream_audio(stream_id):
     # Return a streaming response to the client with proper headers for real-time streaming
     response = Response(
         generate(),
-        mimetype="audio/mpeg",
+        mimetype="audio/ogg; codecs = opus",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
