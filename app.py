@@ -899,7 +899,8 @@ def stream_audio(stream_id):
     # Return a streaming response to the client
     session.pop(f'stream_{stream_id}', None)
 
-    return Response(generate(), mimetype="audio/ogg")
+    # Use audio/ogg with Opus codec explicitly specified for better mobile compatibility
+    return Response(generate(), mimetype="audio/ogg; codecs=opus")
 
 def delete_old_audio_files():
     while True:
