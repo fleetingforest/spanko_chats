@@ -900,14 +900,18 @@ def stream_audio(stream_id):
     # Return a streaming response to the client with proper headers for real-time streaming
     response = Response(
         generate(),
-        mimetype="audio/mp4",
+        mimetype="audio/mp4",  # Use "audio/mpeg" for MP3
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0",
-            "X-Accel-Buffering": "no"  # Disable proxy buffering
+            "X-Accel-Buffering": "no",  # For nginx; disables buffering
+            "Connection": "keep-alive",  # Keeps TCP connection alive
+            "Accept-Ranges": "bytes",    # Allows Safari to seek/stream
+            "Transfer-Encoding": "chunked"  # Needed to stream properly
         }
-    )
+)
+
     
     # Clean up the session after response is created
     session.pop(f'stream_{stream_id}', None)
