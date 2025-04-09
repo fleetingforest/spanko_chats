@@ -900,7 +900,16 @@ def stream_audio(stream_id):
     session.pop(f'stream_{stream_id}', None)
 
     # Use audio/ogg with Opus codec explicitly specified for better mobile compatibility
-    return Response(generate(), mimetype="audio/ogg; codecs=opus")
+    return Response(
+        generate(),
+        mimetype="audio/ogg",
+        headers={
+            "Content-Disposition": "inline; filename=audio.ogg",
+            "Cache-Control": "no-cache",
+            "Transfer-Encoding": "chunked"
+        }
+)
+
 
 def delete_old_audio_files():
     while True:
