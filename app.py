@@ -889,24 +889,30 @@ def stream_audio(stream_id):
         try:
             # Get fresh streaming response at request time
             with openai_tts_test.convert_text_to_audio(text, persona) as response:
+                # Stream chunks as they arrive for real-time playback
                 for chunk in response.iter_bytes():
                     yield chunk
-            # Clean up the session after streaming is complete
+                    # Small sleep to ensure smooth streaming
+                    time.sleep(0.01)
         except Exception as e:
             app.logger.error(f"Error streaming audio: {e}")
-            session.pop(f'stream_{stream_id}', None)
     
-    # Return a streaming response to the client
-    session.pop(f'stream_{stream_id}', None)
-
-    # Use audio/mpeg for MP3 format which has universal browser support
-    return Response(
+    # Return a streaming response to the client with proper headers for real-time streaming
+    response = Response(
         generate(),
         mimetype="audio/mpeg",
         headers={
-            "Content-Disposition": "inline; filename=audio.mp3"
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Accel-Buffering": "no"  # Disable proxy buffering
         }
-)
+    )
+    
+    # Clean up the session after response is created
+    session.pop(f'stream_{stream_id}', None)
+    
+    return response
 
 
 def delete_old_audio_files():
