@@ -899,7 +899,7 @@ def stream_audio(stream_id):
     # Return a streaming response to the client
     session.pop(f'stream_{stream_id}', None)
 
-    return Response(generate(), mimetype="audio/opus")
+    return Response(generate(), mimetype="audio/ogg")
 
 def delete_old_audio_files():
     while True:
