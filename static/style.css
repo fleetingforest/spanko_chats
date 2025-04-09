@@ -500,6 +500,11 @@ select {
     .user-message, .ai-message {
         max-width: 90%;
     }
+    
+    /* Fix onboarding overlay spacing on mobile */
+    .onboarding-content {
+        padding-top: 60px;
+    }
 }
 
 /* Mobile floating Next button for onboarding */
