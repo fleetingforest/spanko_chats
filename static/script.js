@@ -978,20 +978,27 @@ function clearSavedInformation() {
 // Track if we're doing an internal redirect between chat pages
 let isInternalRedirect = false;
 
-// Add event listener for page unload/reload
-window.addEventListener('beforeunload', function(event) {
+// Function to handle page unload/refresh events
+function handlePageUnload() {
     // Don't clear data if we're doing an internal redirect between chat modes
     if (!isInternalRedirect) {
         clearSavedInformation();
+        console.log("Page unloading: localStorage cleared");
     } else {
-        // Reset the flag - this won't actually happen during a real redirect
-        // but helps if the navigation is cancelled
+        console.log("Internal redirect detected: preserving localStorage");
+        // Reset the flag if the navigation is cancelled
         isInternalRedirect = false;
     }
-});
+}
+
+// Add event listeners for page unload/reload
+// Using multiple events for better cross-browser support, especially on mobile
+window.addEventListener('beforeunload', handlePageUnload);
+window.addEventListener('pagehide', handlePageUnload);
 
 // Add event listener when a new page is being loaded (navigation started)
-window.addEventListener('pagehide', function() {
-    // Reset the flag when the page is actually unloaded
+window.addEventListener('unload', function() {
+    // Final reset of the flag when the page is actually unloaded
     isInternalRedirect = false;
+    console.log("Page unloaded: isInternalRedirect reset");
 });
