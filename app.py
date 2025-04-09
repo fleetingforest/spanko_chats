@@ -24,6 +24,12 @@ client = OpenAI(
     base_url="https://api.deepinfra.com/v1/openai"
 )
 
+# Initialize Fireworks client for speech-to-text
+fireworks_client = OpenAI(
+    api_key=os.getenv("FIREWORKS_API_KEY", ""),
+    base_url="https://api.fireworks.ai/inference/v1"
+)
+
 # Initialize Firebase
 cred = credentials.Certificate("spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json")  # Replace with your service account key path
 if not firebase_admin._apps:
@@ -897,10 +903,13 @@ def stream_audio(stream_id):
         except Exception as e:
             app.logger.error(f"Error streaming audio: {e}")
     
+    # Clean up the session after response is created
+    session.pop(f'stream_{stream_id}', None)
+    
     # Return a streaming response to the client with proper headers for real-time streaming
-    response = Response(
+    return Response(
         generate(),
-        mimetype="audio/mpeg",  # Use "audio/mpeg" for MP3
+        mimetype="audio/aac",  # Use "audio/mpeg" for MP3
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
@@ -910,13 +919,73 @@ def stream_audio(stream_id):
             "Accept-Ranges": "bytes",    # Allows Safari to seek/stream
             "Transfer-Encoding": "chunked"  # Needed to stream properly
         }
-)
+    )
 
+@app.route("/transcribe_audio", methods=["POST"])
+def transcribe_audio():
+    """Transcribe audio using Fireworks AI speech-to-text"""
+    if 'audio' not in request.files:
+        return jsonify({"error": "No audio file provided"}), 400
     
-    # Clean up the session after response is created
-    session.pop(f'stream_{stream_id}', None)
+    audio_file = request.files['audio']
+    user_ip = get_client_ip()
+    user_email = session.get('user_email', None)
     
-    return response
+    # Check token limits based on user status
+    if user_email and is_authenticated():
+        token_limit = PATREON_TOKEN_LIMIT if get_user_patreon_status(user_email) == "active" else FREE_TOKEN_LIMIT
+    else:
+        token_limit = FREE_TOKEN_LIMIT
+    
+    # Check token limit for the IP address
+    if get_tokens(user_ip) >= token_limit:
+        return jsonify({"error": "Token limit exceeded"}), 403
+    
+    try:
+        # Save the temporary audio file
+        temp_audio_path = f"temp_audio_{uuid.uuid4()}.webm"
+        audio_file.save(temp_audio_path)
+        
+        # Print debug info
+        app.logger.info(f"Attempting to transcribe audio using Fireworks API. File size: {os.path.getsize(temp_audio_path)} bytes")
+        app.logger.info(f"Using fireworks model: fireworks/whisper-v3-turbo")
+        
+        # Use Fireworks AI Whisper model to transcribe the audio
+        with open(temp_audio_path, "rb") as audio:
+            transcription = fireworks_client.audio.transcriptions.create(
+                model="whisper-v3",
+                file=audio,
+                response_format="text"
+            )
+        
+        app.logger.info(f"Transcription successful: {transcription[:30]}...")
+        
+        # Update token usage - rough estimate based on audio length
+        file_size = os.path.getsize(temp_audio_path) if os.path.exists(temp_audio_path) else 0
+        estimated_tokens = max(100, file_size // 1000)  # Rough estimate: 1 token per KB with minimum of 100
+        update_tokens(user_ip, estimated_tokens)
+        
+        # Remove temporary file
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+        
+        return jsonify({
+            "text": transcription,
+            "status": "success"
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error transcribing audio with Fireworks: {str(e)}")
+        
+        # Add more detailed error logging
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Clean up temporary file if it exists
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+        
+        return jsonify({"error": f"Transcription failed: {str(e)}"}), 500
 
 
 def delete_old_audio_files():

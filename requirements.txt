@@ -12,3 +12,4 @@ patreon
 passlib
 httpx
 sounddevice
+python-dotenv

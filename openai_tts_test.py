@@ -32,7 +32,7 @@ def convert_text_to_audio(text, current_persona):
         "model": model,
         "input": text,
         "voice": voice,
-        "response_format": "mp3",  
+        "response_format": "aac",  
         "speed": 1.0  # default speed, can be adjusted between 0.25 and 4.0
     }
 
