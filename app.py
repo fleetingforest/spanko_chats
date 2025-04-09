@@ -902,7 +902,7 @@ def stream_audio(stream_id):
     # Use audio/ogg with Opus codec explicitly specified for better mobile compatibility
     return Response(
         generate(),
-        mimetype="audio/ogg",
+        mimetype="audio/ogg; codecs=opus",
         headers={
             "Content-Disposition": "inline; filename=audio.ogg",
             "Cache-Control": "no-cache",
