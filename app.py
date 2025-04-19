@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, send_file, url_for, Response, redirect, flash
+from flask import Flask, render_template, request, jsonify, session, send_file, url_for, Response, redirect, flash, send_from_directory
 import openai_tts_test  # Import the TTS script
 import patreon_popup  # Import our custom Patreon popup module
 from openai import OpenAI
@@ -1296,6 +1296,10 @@ def reset_password(token):
         return redirect(url_for('login'))
     # No need to flash a message about checking email - they're already here
     return render_template('reset_password.html', token=token)
+
+@app.route('/google0d0cd6004b26c93e.html')
+def serve_google_verification():
+    return send_from_directory(app.root_path, 'google0d0cd6004b26c93e.html')
 
 if __name__ == "__main__":
     threading.Thread(target=delete_old_audio_files, daemon=True).start()
