@@ -1297,6 +1297,10 @@ def reset_password(token):
     # No need to flash a message about checking email - they're already here
     return render_template('reset_password.html', token=token)
 
+@app.route('/sitemap.xml')
+def sitemap():
+    return send_from_directory(app.root_path, 'sitemap.xml', mimetype='application/xml')
+
 @app.route('/google0d0cd6004b26c93e.html')
 def serve_google_verification():
     return send_from_directory(app.root_path, 'google0d0cd6004b26c93e.html')
