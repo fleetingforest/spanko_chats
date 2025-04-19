@@ -47,7 +47,7 @@ client = OpenAI(
 
 # Initialize Fireworks client for speech-to-text
 fireworks_client = OpenAI(
-    api_key=os.getenv("FIREWORKS_API_KEY", ""),
+    api_key=os.getenv("FIREWORKS_API_KEY"),
     base_url="https://api.fireworks.ai/inference/v1"
 )
 
