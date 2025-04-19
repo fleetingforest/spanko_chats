@@ -13,3 +13,5 @@ passlib
 httpx
 sounddevice
 python-dotenv
+matplotlib
+pandas

@@ -199,6 +199,112 @@
     box-shadow: 0 0 0 3px rgba(138, 60, 200, 0.2);
 }
 
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    animation: fadeIn 0.3s ease;
+}
+
+.modal-content {
+    background-color: var(--chat-bg);
+    margin: 15% auto;
+    padding: 25px;
+    width: 90%;
+    max-width: 500px;
+    border-radius: 20px;
+    box-shadow: 0 5px 30px rgba(0, 0, 0, 0.3);
+    position: relative;
+    animation: scaleIn 0.4s ease;
+}
+
+/* Patreon Modal Specific Styling */
+.patreon-modal-content {
+    text-align: center;
+    background: linear-gradient(to bottom, #ffffff, #f8f4ff);
+    border: 1px solid #e9daff;
+    padding: 40px 30px;
+}
+
+#patreon-modal-title {
+    color: var(--primary-color);
+    font-size: 28px;
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+#patreon-modal-message {
+    font-size: 18px;
+    color: var(--text-color);
+    margin-bottom: 25px;
+    line-height: 1.5;
+}
+
+.patreon-button {
+    display: inline-block;
+    background: linear-gradient(to right, #f96854, #e63c7b);
+    color: white;
+    text-decoration: none;
+    padding: 14px 30px;
+    border-radius: 30px;
+    font-weight: 600;
+    font-size: 18px;
+    transition: all 0.3s ease;
+    box-shadow: 0 5px 15px rgba(230, 60, 123, 0.3);
+    border: none;
+    cursor: pointer;
+}
+
+.patreon-button:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(230, 60, 123, 0.4);
+}
+
+.close {
+    position: absolute;
+    right: 20px;
+    top: 15px;
+    font-size: 28px;
+    font-weight: bold;
+    color: var(--light-text);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.close:hover {
+    color: var(--primary-color);
+    transform: scale(1.1);
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+    from { transform: scale(0.9); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes paddleSwing {
+    0% { transform: rotate(0) translateX(0); }
+    10% { transform: rotate(-30deg) translateX(-10px); }
+    30% { transform: rotate(60deg) translateX(20px); }
+    50% { transform: rotate(-20deg) translateX(-5px); }
+    65% { transform: rotate(10deg) translateX(3px); }
+    80% { transform: rotate(-5deg) translateX(-1px); }
+    100% { transform: rotate(0) translateX(0); }
+}
+
 .hint {
     font-size: 14px;
     color: var(--light-text);
@@ -576,6 +682,62 @@ select {
 
 .disclaimer-link a:hover {
     color: var(--primary-color);
+}
+
+/* Patreon Promotion Styles */
+.patreon-promo {
+    display: flex;
+    background-color: var(--background);
+    border: 2px solid var(--primary-color);
+    border-radius: 10px;
+    padding: 15px;
+    margin: 20px 0;
+    align-items: center;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.patreon-icon {
+    flex: 0 0 80px;
+    margin-right: 20px;
+    position: relative;
+    text-align: center;
+}
+
+.patreon-icon::before {
+    content: "🔔";
+    font-size: 48px;
+    color: #f96854;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.patreon-message {
+    flex: 1;
+}
+
+.patreon-message h3 {
+    color: var(--primary-color);
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.3em;
+}
+
+.patreon-button {
+    display: inline-block;
+    background-color: #f96854;
+    color: white;
+    font-weight: bold;
+    padding: 10px 20px;
+    border-radius: 25px;
+    text-decoration: none;
+    margin-top: 10px;
+    transition: background-color 0.2s, transform 0.2s;
+}
+
+.patreon-button:hover {
+    background-color: #e64f3b;
+    transform: scale(1.05);
+    text-decoration: none;
+    color: white;
 }
 
 .modal {

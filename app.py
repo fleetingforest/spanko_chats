@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, jsonify, session, send_file, url_for, Response, redirect
+from flask import Flask, render_template, request, jsonify, session, send_file, url_for, Response, redirect, flash
 import openai_tts_test  # Import the TTS script
+import patreon_popup  # Import our custom Patreon popup module
 from openai import OpenAI
 import os
 import threading
@@ -14,9 +15,29 @@ from passlib.hash import pbkdf2_sha256  # For password hashing
 import uuid
 import requests
 import secrets
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+from flask_mail import Mail, Message
+import usage_reports  # Import our new usage reporting module
+from collections import Counter
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"  # Required for session
+app.config['SECURITY_PASSWORD_SALT'] = os.getenv("SECURITY_PASSWORD_SALT", "your-password-salt")
+
+# Mail configuration from environment variables
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USE_SSL'] = False
+app.config['MAIL_DEBUG'] = True  # Enable debug output
+
+# Initialize Mail
+mail = Mail(app)
+
+# Initialize the serializer for generating secure tokens
+serializer = URLSafeTimedSerializer(app.secret_key)
 
 # Initialize OpenAI client (replace with your actual API key)
 client = OpenAI(
@@ -222,7 +243,7 @@ PERSONAS = {
         "You are always left feeling embarrassed and ashamed. You are a crybaby about the spankings (but don't be overly dramatic)." 
         "You are always left feeling sorry for yourself. You are always left feeling like the little girl you are."
         "You are very affectionate." 
-        "You are sweet and cuddly after your spanking, even if you weren't before (though you are usually sweet and cuddly anyway)."
+        "You are sweet and cuddly after your spanking, even if you weren't before (though you are usually sweet and cuddly anyway)." 
         "You are very loving and like to give hugs and kisses. You are very playful and like to play games." 
         "You are very curious and like to ask questions. You are very imaginative and like to tell stories." 
         "You are very creative and like to draw and color. You are very energetic and like to run and jump." 
@@ -288,6 +309,76 @@ def get_tokens(ip_address):
         return doc.to_dict().get('tokens', 0)
     return 0
 
+def check_token_thresholds(ip_address):
+    """Check if user has hit specific token thresholds and return appropriate Patreon promotion message"""
+    # First check if the user is logged in and is already a Patreon subscriber
+    user_email = session.get('user_email')
+    if user_email and is_authenticated():
+        patreon_status = get_user_patreon_status(user_email)
+        if patreon_status == "active":
+            # Don't show promotions to active Patreon subscribers
+            return None
+    # If not logged in or not a Patreon subscriber, proceed to check thresholds
+            
+    tokens = get_tokens(ip_address)
+    
+    # Get shown notification thresholds for this user
+    doc_ref = db.collection('token_notifications').document(ip_address)
+    doc = doc_ref.get()
+    shown_thresholds = doc.to_dict().get('shown_thresholds', []) if doc.exists else []
+    
+    # Check each threshold and only show notifications for new thresholds
+    notification = None
+    
+    # First threshold: 50,000 tokens
+    if tokens >= 50000 and 50000 not in shown_thresholds:
+        notification = """
+        <div class="patreon-promo">
+            <div class="patreon-icon"></div>
+            <div class="patreon-message">
+                <h3>Enjoying Spanking Chat?</h3>
+                <a href="https://www.patreon.com/c/SpankingChat" target="_blank" class="patreon-button">Join Patreon!</a>
+            </div>
+        </div>
+        """
+        shown_thresholds.append(50000)
+    
+    # Second threshold: 250,000 tokens
+    elif tokens >= 250000 and 250000 not in shown_thresholds:
+        notification = """
+        <div class="patreon-promo">
+            <div class="patreon-icon"></div>
+            <div class="patreon-message">
+                <h3>Enjoying Spanking Chat?</h3>
+                <a href="https://www.patreon.com/c/SpankingChat" target="_blank" class="patreon-button">Support Us on Patreon!</a>
+            </div>
+        </div>
+        """
+        shown_thresholds.append(250000)
+    
+    # Recurring thresholds: every 250k after 500k
+    elif tokens >= 500000:
+        # Calculate the nearest 250k milestone
+        milestone = 500000 + (((tokens - 500000) // 250000) * 250000)
+        if milestone not in shown_thresholds and tokens >= milestone:
+            notification = f"""
+            <div class="patreon-promo">
+                <div class="patreon-icon"></div>
+                <div class="patreon-message">
+                    <h3>You're amazing!</h3>
+                    <p>Your ongoing usage helps us improve. Patreon members get priority support!</p>
+                    <a href="https://www.patreon.com/c/SpankingChat" target="_blank" class="patreon-button">Become a Patron!</a>
+                </div>
+            </div>
+            """
+            shown_thresholds.append(milestone)
+    
+    # Update the database with the new shown thresholds if we're showing a notification
+    if notification:
+        doc_ref.set({'shown_thresholds': shown_thresholds}, merge=True)
+    
+    return notification
+
 def update_tokens(ip_address, tokens):
     doc_ref = db.collection('token_usage').document(ip_address)
     doc_ref.set({
@@ -306,6 +397,85 @@ def update_voice_tokens(ip_address, tokens):
     doc_ref.set({
         'voice_tokens': firestore.Increment(tokens)
     }, merge=True)
+    
+    # Track daily metrics
+    update_daily_metrics('voice_tokens', tokens)
+    
+def update_daily_metrics(metric_type, value=1, persona=None, hour=None, origin=None):
+    """
+    Update daily usage metrics in Firestore
+    
+    Args:
+        metric_type: Type of metric to update (tokens, voice_tokens, queries)
+        value: Value to increment by
+        persona: Current persona being used (if applicable)
+        hour: Hour of the day (if applicable)
+        origin: User origin or referrer (if applicable)
+    """
+    today = datetime.now().date().isoformat()
+    daily_log_ref = db.collection('daily_logs').document(today)
+    
+    # Get current hour if not provided
+    if hour is None:
+        hour = str(datetime.now().hour).zfill(2)
+        
+    # Update basic metrics
+    if metric_type == 'tokens':
+        daily_log_ref.set({
+            'total_tokens': firestore.Increment(value),
+            'last_updated': firestore.SERVER_TIMESTAMP
+        }, merge=True)
+    elif metric_type == 'voice_tokens':
+        daily_log_ref.set({
+            'total_voice_tokens': firestore.Increment(value),
+            'last_updated': firestore.SERVER_TIMESTAMP
+        }, merge=True)
+    elif metric_type == 'queries':
+        daily_log_ref.set({
+            'total_queries': firestore.Increment(value),
+            'last_updated': firestore.SERVER_TIMESTAMP
+        }, merge=True)
+    
+    # Update active users (count unique IPs)
+    user_ip = get_client_ip()
+    daily_log_ref.set({
+        'active_user_ips': firestore.ArrayUnion([user_ip]),
+        'last_updated': firestore.SERVER_TIMESTAMP
+    }, merge=True)
+    
+    # Update hourly usage
+    hourly_field = f'hourly_usage.{hour}'
+    daily_log_ref.set({
+        hourly_field: firestore.Increment(1),
+        'last_updated': firestore.SERVER_TIMESTAMP
+    }, merge=True)
+    
+    # Update persona usage if provided
+    if persona:
+        persona_field = f'persona_usage.{persona}'
+        daily_log_ref.set({
+            persona_field: firestore.Increment(1),
+            'last_updated': firestore.SERVER_TIMESTAMP
+        }, merge=True)
+    
+    # Update user origin if provided
+    if origin:
+        origin_field = f'user_origins.{origin}'
+        daily_log_ref.set({
+            origin_field: firestore.Increment(1),
+            'last_updated': firestore.SERVER_TIMESTAMP
+        }, merge=True)
+        
+    # Also update the active_users count
+    # We need to get the actual document to count unique IPs
+    doc = daily_log_ref.get()
+    if doc.exists:
+        doc_data = doc.to_dict()
+        unique_ips = len(set(doc_data.get('active_user_ips', [])))
+        daily_log_ref.set({
+            'active_users': unique_ips,
+            'last_updated': firestore.SERVER_TIMESTAMP
+        }, merge=True)
 
 def derive_key(ip_address):
     """Derive a Fernet key from the user's IP address and a secret salt."""
@@ -613,7 +783,14 @@ def send_message():
 
     # Check token limit for the IP address
     if get_tokens(user_ip) >= token_limit:
-        return jsonify({"status": "Token limit exceeded"}), 403
+        return jsonify({
+            "status": "Token limit exceeded",
+            "limit_data": {
+                "title": "*SMACK* Token limit exceeded",
+                "message": "Support us on Patreon to keep the spankings coming!",
+                "button_text": "Join Patreon!"
+            }
+        }), 403
 
     
     # Add user message to conversation
@@ -691,12 +868,16 @@ def send_message():
         except Exception as e:
             app.logger.error(f"Error converting text to audio for streaming: {e}")
 
-    # Return the updated conversation (excluding system prompt), current persona, and audio URL
+    # Check if user has hit any token thresholds and should see a Patreon promotion
+    patreon_promo = check_token_thresholds(user_ip)
+    
+    # Return the updated conversation (excluding system prompt), current persona, audio URL, and any patreon promo
     return jsonify({
         "status": "Message received!", 
         "conversation": conversation[1:],
         "current_persona": current_persona,
-        "audio_url": audio_url
+        "audio_url": audio_url,
+        "patreon_promo": patreon_promo  # This will be None if no threshold is reached
     })
 
 @app.route("/clear", methods=["POST"])
@@ -792,8 +973,14 @@ def get_first_message():
 
     # Check token limit for the IP address
     if get_tokens(user_ip) >= token_limit:
-        return jsonify({"status": "Token limit exceeded"}), 403
-    
+        return jsonify({
+            "status": "Token limit exceeded",
+            "limit_data": {
+                "title": "*SMACK* Token limit exceeded",
+                "message": "Support us on Patreon to keep the spankings coming!",
+                "button_text": "Join Patreon!"
+            }
+        }), 403
     # Create a temporary messages list with a minimal greeting including the user's name
     # This ensures the AI knows who it's talking to and can respond appropriately
     temp_messages = conversation.copy()
@@ -870,13 +1057,14 @@ def get_first_message():
                 print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
         except Exception as e:
             app.logger.error(f"Error converting text to audio for streaming: {e}")
-    
-    # Return the updated conversation (excluding system prompt), current persona, and audio URL
+        
+    # Return the updated conversation (excluding system prompt), current persona, audio URL, and any patreon promo
     return jsonify({
         "status": "First message generated!", 
         "conversation": conversation[1:],
         "current_persona": current_persona,
-        "audio_url": audio_url
+        "audio_url": audio_url,
+        "patreon_promo": None  # This will be None if no threshold is reached
     })
 
 # Add a new endpoint for streaming audio
@@ -939,8 +1127,14 @@ def transcribe_audio():
     
     # Check token limit for the IP address
     if get_tokens(user_ip) >= token_limit:
-        return jsonify({"error": "Token limit exceeded"}), 403
-    
+        return jsonify({
+            "status": "Token limit exceeded",
+            "limit_data": {
+                "title": "*SMACK* Token limit exceeded",
+                "message": "Support us on Patreon to keep the spankings coming!",
+                "button_text": "Join Patreon!"
+            }
+        }), 403
     try:
         # Save the temporary audio file
         temp_audio_path = f"temp_audio_{uuid.uuid4()}.webm"
@@ -1001,7 +1195,50 @@ def delete_old_audio_files():
                     app.logger.info(f"Deleted old encrypted audio file: {blob.name}")
         time.sleep(600)  # Check every 10 minutes
 
+def send_usage_report():
+    """
+    Collect metrics, generate a report, and email it to the admin
+    This function will run as a background task once per day
+    """
+    while True:
+        # We'll make it run at 5:00 AM every day
+        now = datetime.now()
+        if now.hour == 5 and now.minute < 10:  # Run between 5:00 and 5:10 AM
+            try:
+                app.logger.info("Generating and sending daily usage report...")
+                
+                # Collect metrics from the previous day
+                metrics = usage_reports.collect_daily_metrics(db)
+                
+                # Generate HTML report
+                report_html = usage_reports.generate_report_html(metrics)
+                
+                # Send email with the report
+                msg = Message(
+                    subject=f"Spanking Chat Daily Report - {metrics['date']}",
+                    sender=app.config['MAIL_USERNAME'],
+                    recipients=["fleetingforest4@gmail.com"]  # Your email address
+                )
+                
+                # Set HTML content
+                msg.html = report_html
+                
+                # Send the email
+                with app.app_context():
+                    mail.send(msg)
+                    
+                app.logger.info(f"Daily report for {metrics['date']} sent successfully")
+                
+                # Wait 20 minutes before checking again (to avoid sending duplicates)
+                time.sleep(1200)
+            except Exception as e:
+                app.logger.error(f"Error sending daily report: {str(e)}")
+                
+        # Check again in 5 minutes
+        time.sleep(300)
+
 def reset_tokens():
+    """Reset token usage for all users on the 1st of each month"""
     while True:
         today = date.today()
         if today.day == 1:  # Check if it's the 1st of the month
@@ -1022,7 +1259,46 @@ def reset_tokens():
                 app.logger.info("Tokens and voice tokens reset to 0 for all users.")
         time.sleep(86400)  # Check once a day
 
+@app.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        user_ref = db.collection('users').document(email)
+        if not user_ref.get().exists:
+            flash('Email address not found.', 'error')
+            return redirect(url_for('forgot_password'))
+        token = serializer.dumps(email, salt=app.config['SECURITY_PASSWORD_SALT'])
+        reset_link = url_for('reset_password', token=token, _external=True)
+        msg = Message('Password Reset Request', sender=app.config['MAIL_USERNAME'], recipients=[email])
+        msg.body = f'To reset your Spanking Chat password, click the following link: {reset_link}\nThis link is valid for 1 hour.'
+        mail.send(msg)
+        flash('A password reset link has been sent to your email.', 'info')
+        return redirect(url_for('login'))
+    return render_template('forgot_password.html')
+
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    try:
+        email = serializer.loads(token, salt=app.config['SECURITY_PASSWORD_SALT'], max_age=3600)
+    except SignatureExpired:
+        return '<h1>The password reset link has expired.</h1>'
+    except BadSignature:
+        return '<h1>Invalid password reset token.</h1>'
+    if request.method == 'POST':
+        password = request.form.get('password')
+        confirm = request.form.get('confirm_password')
+        if not password or password != confirm:
+            flash('Passwords do not match.', 'error')
+            return redirect(url_for('reset_password', token=token))
+        hashed = pbkdf2_sha256.hash(password)
+        db.collection('users').document(email).update({'password': hashed})
+        flash('Your password has been reset successfully.', 'success')
+        return redirect(url_for('login'))
+    # No need to flash a message about checking email - they're already here
+    return render_template('reset_password.html', token=token)
+
 if __name__ == "__main__":
     threading.Thread(target=delete_old_audio_files, daemon=True).start()
     threading.Thread(target=reset_tokens, daemon=True).start()
+    threading.Thread(target=send_usage_report, daemon=True).start()
     app.run(debug=True)

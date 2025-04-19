@@ -301,7 +301,10 @@ function sendMessage() {
     })
     .then(response => {
         if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
+            return response.json().then(data => {
+                displayError(data);
+                return Promise.reject(data);
+            });
         }
         return response.json();
     })
@@ -314,6 +317,21 @@ function sendMessage() {
         } else {
             updateChat(data.conversation);
         }
+        
+        // Display Patreon promotion if one was returned, but as a modal instead of in the chat
+        if (data.patreon_promo) {
+            // Check if we have the showPatreonModal function (newer popup implementation)
+            if (typeof showPatreonModal === 'function') {
+                showPatreonModal(data.patreon_promo);
+            } else {
+                // Fallback to old method for compatibility
+                const promoDiv = document.createElement('div');
+                promoDiv.innerHTML = data.patreon_promo;
+                chatBox.appendChild(promoDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+        }
+        
         // Check if the server included the current persona in response
         if (data.current_persona) {
             activePersona = data.current_persona;
@@ -322,6 +340,8 @@ function sendMessage() {
     .catch(error => {
         console.error("Error:", error);
         chatBox.removeChild(typingDiv);
+        // If error already displayed via displayError, skip fallback
+        if (error.patreon_url || error.message) return;
         let errorDiv = document.createElement("div");
         errorDiv.className = "ai-message";
         errorDiv.textContent = activePersona + ": Oops, something went wrong!";
@@ -375,7 +395,10 @@ function getAiFirstMessage() {
     })
     .then(response => {
         if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
+            return response.json().then(data => {
+                displayError(data);
+                return Promise.reject(data);
+            });
         }
         return response.json();
     })
@@ -396,6 +419,7 @@ function getAiFirstMessage() {
     .catch(error => {
         console.error("Error:", error);
         chatBox.removeChild(typingDiv);
+        if (error.patreon_url || error.message) return;
         let errorDiv = document.createElement("div");
         errorDiv.className = "ai-message";
         errorDiv.textContent = activePersona + ": Oops, something went wrong!";
@@ -626,6 +650,40 @@ function updateChat(conversation) {
         }
     });
 
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// Add helper to show styled errors in the chat box
+function displayError(data) {
+    // Check if this is a token limit error that should be shown as a modal
+    if (data.status === "Token limit exceeded") {
+        // Check if we have limit_data (new format) or message (old format)
+        if (data.limit_data && typeof showPatreonModal === 'function') {
+            // Use the structured data from the server
+            showPatreonModal(data.limit_data);
+            return; // Don't show in chat
+        } else if (data.message && typeof showPatreonModal === 'function') {
+            // Extract the message content from the HTML (backward compatibility)
+            showPatreonModal({
+                title: "*SMACK* Token limit exceeded",
+                message: "Support us on Patreon to keep the spankings coming!",
+                button_text: "Join Patreon!"
+            });
+            return; // Don't show in chat
+        }
+    }
+    
+    // Default error display for non-token limit errors
+    const chatBox = document.getElementById("chat-box");
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "error-message";
+    // Use innerHTML to include link
+    errorDiv.innerHTML = `
+        <strong>${data.status || data.error}</strong>
+        <p>${data.message || ''}</p>
+        ${data.patreon_url ? `<p><a href="${data.patreon_url}" target="_blank">Support on Patreon</a></p>` : ''}
+    `;
+    chatBox.appendChild(errorDiv);
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 

@@ -172,6 +172,31 @@
             resetTextareaHeight();
         };
         
+        // Patreon modal functions
+        function showPatreonModal(data) {
+            if (!data) return;
+            
+            // Set modal content
+            document.getElementById('patreon-modal-title').innerText = data.title || 'Enjoying Spanking Chat?';
+            
+            if (data.message) {
+                document.getElementById('patreon-modal-message').innerText = data.message;
+                document.getElementById('patreon-modal-message').style.display = 'block';
+            } else {
+                document.getElementById('patreon-modal-message').style.display = 'none';
+            }
+            
+            document.getElementById('patreon-modal-button').innerText = data.button_text || 'Join Patreon!';
+            
+            // Display the modal
+            const modal = document.getElementById('patreon-modal');
+            modal.style.display = 'block';
+        }
+        
+        function closePatreonModal() {
+            document.getElementById('patreon-modal').style.display = 'none';
+        }
+        
         // Voice input functionality
         document.addEventListener('DOMContentLoaded', function() {
             let mediaRecorder;
@@ -300,6 +325,17 @@
         <div class="modal-content">
             <span class="close" onclick="closeDisclaimer()">&times;</span>
             <p>Spanking should only take place between consenting adults. This app is roleplay, not real life. Hitting children is wrong.</p>
+        </div>
+    </div>
+    
+    <!-- Patreon Promotion Modal -->
+    <div id="patreon-modal" class="modal">
+        <div class="modal-content patreon-modal-content">
+            <span class="close" onclick="closePatreonModal()">&times;</span>
+            <div class="patreon-icon"></div>
+            <h3 id="patreon-modal-title">Enjoying Spanking Chat?</h3>
+            <p id="patreon-modal-message">Support us on Patreon!</p>
+            <a href="https://www.patreon.com/c/SpankingChat" target="_blank" class="patreon-button" id="patreon-modal-button">Join Patreon!</a>
         </div>
     </div>
 </body>
