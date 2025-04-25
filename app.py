@@ -5,7 +5,7 @@ from openai import OpenAI
 import os
 import threading
 import time
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from cryptography.fernet import Fernet, InvalidToken
 import hashlib
 import base64
@@ -19,6 +19,7 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from flask_mail import Mail, Message
 import usage_reports  # Import our new usage reporting module
 from collections import Counter
+import click  # Add click for CLI commands
 
 app = Flask(__name__)
 
@@ -1188,82 +1189,129 @@ def transcribe_audio():
         return jsonify({"error": f"Transcription failed: {str(e)}"}), 500
 
 
-def delete_old_audio_files():
-    while True:
-        now = datetime.now()
-        cutoff = now - timedelta(minutes=30)
-        blobs = bucket.list_blobs(prefix="audio/")
-        for blob in blobs:
-            if blob.name.startswith("audio/openai_output_") and blob.name.endswith(".enc"):
-                updated_time = blob.updated.replace(tzinfo=None)  # Make offset-naive
-                if updated_time < cutoff:
-                    blob.delete()
-                    app.logger.info(f"Deleted old encrypted audio file: {blob.name}")
-        time.sleep(600)  # Check every 10 minutes
+def delete_old_audio_files_task():
+    """Deletes encrypted audio files older than 30 minutes from Firebase Storage."""
+    app.logger.info("Running delete_old_audio_files_task...")
+    try:
+        with app.app_context(): # Ensure app context for logging and potentially bucket access
+            now = datetime.now(timezone.utc) # Use timezone-aware datetime
+            cutoff = now - timedelta(minutes=30)
+            blobs = bucket.list_blobs(prefix="audio/")
+            deleted_count = 0
+            for blob in blobs:
+                # Ensure blob.updated is timezone-aware (it should be from Firebase)
+                if blob.updated and blob.name.startswith("audio/openai_output_") and blob.name.endswith(".enc"):
+                    if blob.updated < cutoff:
+                        blob.delete()
+                        app.logger.info(f"Deleted old encrypted audio file: {blob.name}")
+                        deleted_count += 1
+            app.logger.info(f"Finished delete_old_audio_files_task. Deleted {deleted_count} files.")
+    except Exception as e:
+        app.logger.error(f"Error in delete_old_audio_files_task: {str(e)}", exc_info=True)
 
-def send_usage_report():
+# --- Add Flask CLI Command ---
+@app.cli.command("delete-old-audio")
+def delete_old_audio_command():
+    """Deletes old audio files from Firebase Storage."""
+    print("Starting delete-old-audio command...")
+    delete_old_audio_files_task()
+    print("delete-old-audio command finished.")
+
+def send_usage_report_task(): # Renamed slightly to avoid confusion
     """
-    Collect metrics, generate a report, and email it to the admin
-    This function will run as a background task once per day
+    Collect metrics, generate a report, and email it to the admin.
+    Designed to be run once by a scheduler (like a Cron Job).
     """
-    while True:
-        # We'll make it run at 5:00 AM every day
-        now = datetime.now()
-        if now.hour == 5 and now.minute < 10:  # Run between 5:00 and 5:10 AM
-            try:
-                app.logger.info("Generating and sending daily usage report...")
-                
-                # Collect metrics from the previous day
-                metrics = usage_reports.collect_daily_metrics(db)
-                
-                # Generate HTML report
-                report_html = usage_reports.generate_report_html(metrics)
-                
-                # Send email with the report
-                msg = Message(
-                    subject=f"Discipline Chat Daily Report - {metrics['date']}",
-                    sender=app.config['MAIL_USERNAME'],
-                    recipients=["fleetingforest4@gmail.com"]  # Your email address
-                )
-                
-                # Set HTML content
-                msg.html = report_html
-                
-                # Send the email
-                with app.app_context():
-                    mail.send(msg)
+    app.logger.info("send_usage_report_task started.")
+    try:
+        app.logger.info("Generating and sending daily usage report...")
+
+        # Collect metrics from the previous day
+        # Ensure usage_reports functions are compatible with running outside request context
+        # Might need app.app_context() if they access app config or db directly without it
+        with app.app_context():
+             metrics = usage_reports.collect_daily_metrics(db)
+             app.logger.info(f"Collected metrics for date: {metrics.get('date', 'N/A')}")
+             # Generate HTML report
+             report_html = usage_reports.generate_report_html(metrics)
+             app.logger.info("Generated HTML report.")
+
+        # Send email with the report
+        msg = Message(
+            subject=f"Discipline Chat Daily Report - {metrics['date']}", # Updated subject
+            sender=app.config['MAIL_USERNAME'],
+            recipients=["fleetingforest4@gmail.com"] # Your email address
+        )
+        msg.html = report_html
+
+        app.logger.info("Attempting to send email...")
+        # Need app context to send mail outside of a request
+        with app.app_context():
+            mail.send(msg)
+
+        app.logger.info(f"Daily report for {metrics['date']} sent successfully")
+
+    except Exception as e:
+        app.logger.error(f"Error sending daily report: {str(e)}", exc_info=True)
+    finally:
+        app.logger.info("send_usage_report_task finished.")
+
+# --- Add Flask CLI Command ---
+@app.cli.command("send-report")
+def send_report_command():
+    """Sends the daily usage report."""
+    print("Starting send-report command...")
+    send_usage_report_task()
+    print("send-report command finished.")
+
+
+def reset_tokens_task():
+    """Reset token usage for all users if it's the 1st of the month."""
+    app.logger.info("Running reset_tokens_task...")
+    try:
+        with app.app_context(): # Ensure app context for db access and logging
+            today = date.today()
+            if today.day == 1:  # Check if it's the 1st of the month
+                last_reset_ref = db.collection('metadata').document('last_reset')
+                last_reset_doc = last_reset_ref.get()
+                last_reset_date = last_reset_doc.to_dict().get('date') if last_reset_doc.exists else None
+
+                if last_reset_date != today.isoformat():  # Check if the reset has already been done today
+                    users_ref = db.collection('token_usage')
+                    users = users_ref.stream()
+                    reset_count = 0
+                    batch = db.batch()
+                    for user in users:
+                        user_ref = db.collection('token_usage').document(user.id)
+                        batch.update(user_ref, {
+                            'tokens': 0,
+                            'voice_tokens': 0
+                        })
+                        reset_count += 1
+                        # Commit batch every 500 updates to avoid exceeding limits
+                        if reset_count % 500 == 0:
+                            batch.commit()
+                            batch = db.batch() # Start a new batch
                     
-                app.logger.info(f"Daily report for {metrics['date']} sent successfully")
-                
-                # Wait 20 minutes before checking again (to avoid sending duplicates)
-                time.sleep(1200)
-            except Exception as e:
-                app.logger.error(f"Error sending daily report: {str(e)}")
-                
-        # Check again in 5 minutes
-        time.sleep(300)
+                    if reset_count % 500 != 0: # Commit any remaining updates
+                         batch.commit()
 
-def reset_tokens():
-    """Reset token usage for all users on the 1st of each month"""
-    while True:
-        today = date.today()
-        if today.day == 1:  # Check if it's the 1st of the month
-            last_reset_ref = db.collection('metadata').document('last_reset')
-            last_reset_doc = last_reset_ref.get()
-            last_reset_date = last_reset_doc.to_dict().get('date') if last_reset_doc.exists else None
+                    last_reset_ref.set({'date': today.isoformat()})  # Update the last reset date
+                    app.logger.info(f"Tokens and voice tokens reset to 0 for {reset_count} users.")
+                else:
+                    app.logger.info("Token reset already performed today.")
+            else:
+                app.logger.info(f"Not the 1st of the month (Day: {today.day}). Skipping token reset.")
+    except Exception as e:
+        app.logger.error(f"Error in reset_tokens_task: {str(e)}", exc_info=True)
 
-            if last_reset_date != today.isoformat():  # Check if the reset has already been done today
-                users_ref = db.collection('token_usage')
-                users = users_ref.stream()
-                for user in users:
-                    user_ref = db.collection('token_usage').document(user.id)
-                    user_ref.update({
-                        'tokens': 0,
-                        'voice_tokens': 0
-                    })
-                last_reset_ref.set({'date': today.isoformat()})  # Update the last reset date
-                app.logger.info("Tokens and voice tokens reset to 0 for all users.")
-        time.sleep(86400)  # Check once a day
+# --- Add Flask CLI Command ---
+@app.cli.command("reset-tokens")
+def reset_tokens_command():
+    """Resets user tokens if it's the 1st of the month."""
+    print("Starting reset-tokens command...")
+    reset_tokens_task()
+    print("reset-tokens command finished.")
 
 @app.route('/forgot_password', methods=['GET', 'POST'])
 def forgot_password():
@@ -1310,9 +1358,3 @@ def sitemap():
 @app.route('/google0d0cd6004b26c93e.html')
 def serve_google_verification():
     return send_from_directory(app.root_path, 'google0d0cd6004b26c93e.html')
-
-if __name__ == "__main__":
-    threading.Thread(target=delete_old_audio_files, daemon=True).start()
-    threading.Thread(target=reset_tokens, daemon=True).start()
-    threading.Thread(target=send_usage_report, daemon=True).start()
-    app.run(debug=True)
