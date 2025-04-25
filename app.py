@@ -21,6 +21,12 @@ import usage_reports  # Import our new usage reporting module
 from collections import Counter
 
 app = Flask(__name__)
+
+@app.before_request
+def redirect_to_primary_domain():
+    if request.host == "spanking-chat.onrender.com":
+        return redirect("https://discipline.chat" + request.full_path, code=301)
+    
 app.secret_key = "your-secret-key"  # Required for session
 app.config['SECURITY_PASSWORD_SALT'] = os.getenv("SECURITY_PASSWORD_SALT", "your-password-salt")
 
