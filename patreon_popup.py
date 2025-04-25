@@ -30,9 +30,10 @@ def check_token_thresholds(ip_address, get_tokens, db, session, is_authenticated
     # First threshold: 50,000 tokens
     if tokens >= 50000 and 50000 not in shown_thresholds:
         notification = {
-            "title": "Enjoying Spanking Chat?",
-            "message": "Support us on Patreon!",
+            "title": "Enjoying Discipline Chat?",
+            "message": "Support us on Patreon to keep the spankings coming!",
             "button_text": "Join Patreon!",
+            "link": "https://www.patreon.com/c/SpankingChat",
             "threshold": 50000
         }
         shown_thresholds.append(50000)
@@ -40,9 +41,10 @@ def check_token_thresholds(ip_address, get_tokens, db, session, is_authenticated
     # Second threshold: 250,000 tokens
     elif tokens >= 250000 and 250000 not in shown_thresholds:
         notification = {
-            "title": "Enjoying Spanking Chat?",
-            "message": "Support us on Patreon!",
+            "title": "Enjoying Discipline Chat?",
+            "message": "You've used a lot of tokens! Support us on Patreon for more.",
             "button_text": "Support Us on Patreon!",
+            "link": "https://www.patreon.com/c/SpankingChat",
             "threshold": 250000
         }
         shown_thresholds.append(250000)

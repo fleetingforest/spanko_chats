@@ -336,7 +336,7 @@ def check_token_thresholds(ip_address):
         <div class="patreon-promo">
             <div class="patreon-icon"></div>
             <div class="patreon-message">
-                <h3>Enjoying Spanking Chat?</h3>
+                <h3>Enjoying Discipline Chat?</h3>
                 <a href="https://www.patreon.com/c/SpankingChat" target="_blank" class="patreon-button">Join Patreon!</a>
             </div>
         </div>
@@ -349,7 +349,7 @@ def check_token_thresholds(ip_address):
         <div class="patreon-promo">
             <div class="patreon-icon"></div>
             <div class="patreon-message">
-                <h3>Enjoying Spanking Chat?</h3>
+                <h3>Enjoying Discipline Chat?</h3>
                 <a href="https://www.patreon.com/c/SpankingChat" target="_blank" class="patreon-button">Support Us on Patreon!</a>
             </div>
         </div>
@@ -1215,7 +1215,7 @@ def send_usage_report():
                 
                 # Send email with the report
                 msg = Message(
-                    subject=f"Spanking Chat Daily Report - {metrics['date']}",
+                    subject=f"Discipline Chat Daily Report - {metrics['date']}",
                     sender=app.config['MAIL_USERNAME'],
                     recipients=["fleetingforest4@gmail.com"]  # Your email address
                 )
@@ -1270,7 +1270,7 @@ def forgot_password():
         token = serializer.dumps(email, salt=app.config['SECURITY_PASSWORD_SALT'])
         reset_link = url_for('reset_password', token=token, _external=True)
         msg = Message('Password Reset Request', sender=app.config['MAIL_USERNAME'], recipients=[email])
-        msg.body = f'To reset your Spanking Chat password, click the following link: {reset_link}\nThis link is valid for 1 hour.'
+        msg.body = f'To reset your Discipline Chat password, click the following link: {reset_link}\nThis link is valid for 1 hour.'
         mail.send(msg)
         flash('A password reset link has been sent to your email.', 'info')
         return redirect(url_for('login'))

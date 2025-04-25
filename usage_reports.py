@@ -8,7 +8,7 @@ from collections import Counter
 import firebase_admin
 from firebase_admin import firestore
 
-# This module is responsible for generating usage reports for the Spanking Chat application
+# This module is responsible for generating usage reports for the Discipline Chat application
 
 def create_bar_chart(data, title, xlabel, ylabel, filename):
     """Create a bar chart from data and return as base64 encoded image"""
@@ -235,7 +235,7 @@ def generate_report_html(metrics):
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Spanking Chat Usage Report - {metrics['date']}</title>
+        <title>Discipline Chat Usage Report - {metrics['date']}</title>
         <style>
             body {{
                 font-family: Arial, sans-serif;
@@ -305,7 +305,7 @@ def generate_report_html(metrics):
     </head>
     <body>
         <div class="container">
-            <h1>Spanking Chat Usage Report</h1>
+            <h1>Discipline Chat Usage Report</h1>
             <p style="text-align: center;">Report for: {metrics['date']}</p>
             
             <div class="metrics-row">
@@ -373,7 +373,7 @@ def generate_report_html(metrics):
             </div>
             
             <div class="footer">
-                <p>Generated automatically on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} by Spanking Chat Analytics</p>
+                <p>Generated automatically on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} by Discipline Chat Analytics</p>
             </div>
         </div>
     </body>

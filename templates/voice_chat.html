@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spanking Chat</title>
+    <title>Discipline Chat</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <!-- Onboarding overlay for new users -->
     <div id="onboarding-overlay" class="onboarding-overlay" {% if session.user_email %}style="display: none;"{% endif %}>
         <div class="onboarding-content">
-            <h2>Welcome to Spanking Chat!</h2>
+            <h2>Welcome to Discipline Chat!</h2>
             <p>We're excited to offer you a private, safe AI experience tailored to your spanking needs!</p>
             
             <div class="onboarding-step active" data-step="1">
@@ -76,7 +76,7 @@
         <div class="patreon-link">
             <a href="https://www.patreon.com/c/SpankingChat" target="_blank">Support us on Patreon</a>
         </div>
-        <h1 class="title">Spanking chat</h1>
+        <h1 class="title">Discipline chat</h1>
         <p class="tagline">Disciplinary spanking chat with an AI who knows your place — or lets you decide theirs.</p>
         <!-- Add link to login/register or logout based on authentication status -->
         <div class="login-section">
@@ -177,7 +177,7 @@
             if (!data) return;
             
             // Set modal content
-            document.getElementById('patreon-modal-title').innerText = data.title || 'Enjoying Spanking Chat?';
+            document.getElementById('patreon-modal-title').innerText = data.title || 'Enjoying Discipline Chat?';
             
             if (data.message) {
                 document.getElementById('patreon-modal-message').innerText = data.message;
@@ -333,7 +333,7 @@
         <div class="modal-content patreon-modal-content">
             <span class="close" onclick="closePatreonModal()">&times;</span>
             <div class="patreon-icon"></div>
-            <h3 id="patreon-modal-title">Enjoying Spanking Chat?</h3>
+            <h3 id="patreon-modal-title">Enjoying Discipline Chat?</h3>
             <p id="patreon-modal-message">Support us on Patreon!</p>
             <a href="https://www.patreon.com/c/SpankingChat" target="_blank" class="patreon-button" id="patreon-modal-button">Join Patreon!</a>
         </div>
