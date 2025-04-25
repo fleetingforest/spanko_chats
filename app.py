@@ -59,7 +59,7 @@ fireworks_client = OpenAI(
 )
 
 # Initialize Firebase
-cred = credentials.Certificate("spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json")  # Replace with your service account key path
+cred = credentials.Certificate("/etc/secrets/spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json")  # Replace with your service account key path
 if not firebase_admin._apps:
     firebase_admin.initialize_app(cred, {
         'storageBucket': 'spanking-chat.firebasestorage.app'  # Replace with your Firebase bucket
