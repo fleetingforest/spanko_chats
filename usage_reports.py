@@ -3,10 +3,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import io
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, timezone
 from collections import Counter
 import firebase_admin
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter # Import FieldFilter for modern queries
 
 # This module is responsible for generating usage reports for the Discipline Chat application
 
@@ -57,107 +58,71 @@ def create_line_chart(dates, values, title, xlabel, ylabel):
     return encoded
 
 def collect_daily_metrics(db):
-    """
-    Collect daily usage metrics from Firestore
-    Returns a dictionary with the collected metrics
-    """
-    today = datetime.now().date()
-    yesterday = today - timedelta(days=1)
-    yesterday_str = yesterday.isoformat()
-    
-    # Initialize metrics dictionary
-    metrics = {
-        'date': yesterday_str,
-        'total_users': 0,
-        'new_users': 0,
-        'total_tokens': 0,
-        'total_voice_tokens': 0,
-        'total_queries': 0,
-        'active_users': 0,
-        'persona_usage': Counter(),
-        'user_origins': Counter(),
-        'hourly_usage': {str(i).zfill(2): 0 for i in range(24)}
-    }
-    
-    # Get daily logs collection for yesterday
-    daily_logs_ref = db.collection('daily_logs').document(yesterday_str)
-    daily_log = daily_logs_ref.get()
-    
-    if daily_log.exists:
-        log_data = daily_log.to_dict()
-        metrics.update({
-            'total_tokens': log_data.get('total_tokens', 0),
-            'total_voice_tokens': log_data.get('total_voice_tokens', 0),
-            'total_queries': log_data.get('total_queries', 0),
-            'active_users': log_data.get('active_users', 0),
-            'persona_usage': Counter(log_data.get('persona_usage', {})),
-            'hourly_usage': log_data.get('hourly_usage', metrics['hourly_usage']),
-            'user_origins': Counter(log_data.get('user_origins', {}))
-        })
-    
-    # Get user metrics
+    """Collect usage metrics for the previous day and the past week."""
+    today_date = date.today()
+    yesterday_date = today_date - timedelta(days=1)
+    seven_days_ago_date = today_date - timedelta(days=7)
+
+    # --- Get Yesterday's Metrics ---
+    start_of_yesterday = datetime.combine(yesterday_date, datetime.min.time(), tzinfo=timezone.utc)
+    start_of_today = datetime.combine(today_date, datetime.min.time(), tzinfo=timezone.utc)
+
+    yesterday_log_ref = db.collection('daily_logs').document(yesterday_date.isoformat())
+    yesterday_log_doc = yesterday_log_ref.get()
+    yesterday_data = yesterday_log_doc.to_dict() if yesterday_log_doc.exists else {}
+
+    total_tokens_yesterday = yesterday_data.get('total_tokens', 0)
+    total_voice_tokens_yesterday = yesterday_data.get('total_voice_tokens', 0)
+    total_queries_yesterday = yesterday_data.get('total_queries', 0)
+    active_users_yesterday = yesterday_data.get('active_users', 0)
+    hourly_usage = yesterday_data.get('hourly_usage', {})
+    persona_usage = yesterday_data.get('persona_usage', {})
+    user_origins = yesterday_data.get('user_origins', {})
+
+    # --- Calculate New Users Yesterday ---
     users_ref = db.collection('users')
-    all_users = list(users_ref.stream())
-    metrics['total_users'] = len(all_users)
-    
-    # Count new users from yesterday
-    new_users = users_ref.where('created_at', '>=', yesterday).where('created_at', '<', today).stream()
-    metrics['new_users'] = sum(1 for _ in new_users)
-    
-    # Get historical data for trends (last 7 days)
-    historical_data = {
-        'dates': [],
-        'tokens': [],
-        'voice_tokens': [],
-        'queries': [],
-        'active_users': []
+    # Use modern FieldFilter for queries
+    new_users_query = users_ref.where(filter=FieldFilter('created_at', '>=', start_of_yesterday)).where(filter=FieldFilter('created_at', '<', start_of_today))
+    new_users_stream = new_users_query.stream()
+    new_users_count = len(list(new_users_stream))
+
+    # --- Calculate Current Active Patreon Users (Total) ---
+    # Note: This is the total count, not just those active yesterday.
+    patreon_users_ref = db.collection('users').where(filter=FieldFilter('patreon_status', '==', 'active'))
+    patreon_users_stream = patreon_users_ref.stream()
+    active_patreon_count_total = len(list(patreon_users_stream))
+
+    # --- Get Historical Data (Last 7 Days) ---
+    historical_data = {'dates': [], 'tokens': [], 'queries': [], 'active_users': []}
+    date_range = [seven_days_ago_date + timedelta(days=i) for i in range(7)] # Dates from 7 days ago up to yesterday
+
+    # Fetch logs for the date range using document ID range query
+    docs = db.collection('daily_logs').where(filter=FieldFilter(firestore.firestore.Client.field_path.document_id(), '>=', seven_days_ago_date.isoformat())).where(filter=FieldFilter(firestore.firestore.Client.field_path.document_id(), '<', today_date.isoformat())).stream()
+
+    logs_by_date = {doc.id: doc.to_dict() for doc in docs}
+
+    for day in date_range:
+        day_str = day.isoformat()
+        log_data = logs_by_date.get(day_str, {}) # Get log data or empty dict if missing
+        historical_data['dates'].append(day_str)
+        historical_data['tokens'].append(log_data.get('total_tokens', 0))
+        historical_data['queries'].append(log_data.get('total_queries', 0))
+        historical_data['active_users'].append(log_data.get('active_users', 0))
+
+    # --- Prepare Final Metrics Dictionary ---
+    metrics = {
+        'date': yesterday_date.isoformat(),
+        'total_tokens': total_tokens_yesterday,
+        'total_voice_tokens': total_voice_tokens_yesterday,
+        'total_queries': total_queries_yesterday,
+        'active_users': active_users_yesterday,
+        'new_users': new_users_count,
+        'active_patreon_users': active_patreon_count_total, # Reporting total current Patreon users
+        'hourly_usage': hourly_usage,
+        'persona_usage': persona_usage,
+        'user_origins': user_origins,
+        'historical_data': historical_data, # Add historical data
     }
-    
-    for i in range(7, 0, -1):
-        past_date = today - timedelta(days=i)
-        past_date_str = past_date.isoformat()
-        past_log_ref = db.collection('daily_logs').document(past_date_str)
-        past_log = past_log_ref.get()
-        
-        if past_log.exists:
-            log_data = past_log.to_dict()
-            historical_data['dates'].append(past_date_str)
-            historical_data['tokens'].append(log_data.get('total_tokens', 0))
-            historical_data['voice_tokens'].append(log_data.get('total_voice_tokens', 0))
-            historical_data['queries'].append(log_data.get('total_queries', 0))
-            historical_data['active_users'].append(log_data.get('active_users', 0))
-    
-    metrics['historical_data'] = historical_data
-    
-    # Get token usage breakdown by user type
-    token_usage = {
-        'free_users': 0,
-        'patreon_users': 0
-    }
-    
-    all_token_usages = db.collection('token_usage').stream()
-    for usage in all_token_usages:
-        user_data = usage.to_dict()
-        user_id = usage.id
-        
-        # Try to determine if this is a Patreon user
-        user_ref = db.collection('users').where('email', '==', user_id).limit(1).stream()
-        user_docs = list(user_ref)
-        
-        if user_docs and len(user_docs) > 0:
-            user_doc = user_docs[0].to_dict()
-            is_patreon = user_doc.get('patreon_status', 'inactive') == 'active'
-            
-            if is_patreon:
-                token_usage['patreon_users'] += user_data.get('tokens', 0)
-            else:
-                token_usage['free_users'] += user_data.get('tokens', 0)
-        else:
-            # If we can't determine, assume it's a free user
-            token_usage['free_users'] += user_data.get('tokens', 0)
-    
-    metrics['token_usage_breakdown'] = token_usage
-    
     return metrics
 
 def generate_report_html(metrics):
@@ -167,7 +132,7 @@ def generate_report_html(metrics):
     """
     # Generate charts
     persona_chart = create_bar_chart(
-        metrics['persona_usage'], 
+        metrics.get('persona_usage', {}), # Use .get()
         'Persona Usage Distribution', 
         'Persona', 
         'Usage Count',
@@ -175,7 +140,7 @@ def generate_report_html(metrics):
     )
     
     origin_chart = create_bar_chart(
-        metrics['user_origins'], 
+        metrics.get('user_origins', {}), # Use .get()
         'User Origin Distribution', 
         'Origin', 
         'Count',
@@ -183,7 +148,7 @@ def generate_report_html(metrics):
     )
     
     hourly_chart = create_bar_chart(
-        metrics['hourly_usage'], 
+        metrics.get('hourly_usage', {}), # Use .get()
         'Hourly Usage Distribution', 
         'Hour of Day', 
         'Usage Count',
@@ -191,7 +156,8 @@ def generate_report_html(metrics):
     )
     
     # Create trend charts if we have historical data
-    hist_data = metrics['historical_data']
+    # Use .get() with default empty dict/list
+    hist_data = metrics.get('historical_data', {'dates': [], 'tokens': [], 'queries': [], 'active_users': []})
     token_trend = ""
     query_trend = ""
     user_trend = ""
@@ -221,21 +187,13 @@ def generate_report_html(metrics):
             'Users'
         )
     
-    # Create token usage breakdown chart
-    token_breakdown = create_bar_chart(
-        metrics['token_usage_breakdown'],
-        'Token Usage by User Type',
-        'User Type',
-        'Token Count',
-        'token_breakdown.png'
-    )
-    
     # Format HTML
+    # Use .get() for metrics values in HTML to avoid KeyErrors if collect_daily_metrics changes
     html = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Discipline Chat Usage Report - {metrics['date']}</title>
+        <title>Discipline Chat Usage Report - {metrics.get('date', 'N/A')}</title>
         <style>
             body {{
                 font-family: Arial, sans-serif;
@@ -306,34 +264,34 @@ def generate_report_html(metrics):
     <body>
         <div class="container">
             <h1>Discipline Chat Usage Report</h1>
-            <p style="text-align: center;">Report for: {metrics['date']}</p>
+            <p style="text-align: center;">Report for: {metrics.get('date', 'N/A')}</p>
             
             <div class="metrics-row">
                 <div class="metrics-box metric-card">
-                    <div class="metric-value">{metrics['total_users']}</div>
+                    <div class="metric-value">{metrics.get('total_users', 0)}</div>
                     <div class="metric-label">Total Users</div>
                 </div>
                 <div class="metrics-box metric-card">
-                    <div class="metric-value">{metrics['new_users']}</div>
+                    <div class="metric-value">{metrics.get('new_users', 0)}</div>
                     <div class="metric-label">New Users</div>
                 </div>
                 <div class="metrics-box metric-card">
-                    <div class="metric-value">{metrics['active_users']}</div>
+                    <div class="metric-value">{metrics.get('active_users', 0)}</div>
                     <div class="metric-label">Active Users</div>
                 </div>
             </div>
             
             <div class="metrics-row">
                 <div class="metrics-box metric-card">
-                    <div class="metric-value">{metrics['total_queries']}</div>
+                    <div class="metric-value">{metrics.get('total_queries', 0)}</div>
                     <div class="metric-label">Total Queries</div>
                 </div>
                 <div class="metrics-box metric-card">
-                    <div class="metric-value">{metrics['total_tokens']:,}</div>
+                    <div class="metric-value">{metrics.get('total_tokens', 0):,}</div>
                     <div class="metric-label">Total Tokens</div>
                 </div>
                 <div class="metrics-box metric-card">
-                    <div class="metric-value">{metrics['total_voice_tokens']:,}</div>
+                    <div class="metric-value">{metrics.get('total_voice_tokens', 0):,}</div>
                     <div class="metric-label">Voice Tokens</div>
                 </div>
             </div>
@@ -350,11 +308,6 @@ def generate_report_html(metrics):
             
             <div class="chart">
                 <img src="data:image/png;base64,{user_trend}" alt="User Trend">
-            </div>
-            
-            <h2>Token Usage Breakdown</h2>
-            <div class="chart">
-                <img src="data:image/png;base64,{token_breakdown}" alt="Token Usage Breakdown">
             </div>
             
             <h2>Persona Popularity</h2>
