@@ -97,8 +97,11 @@ def collect_daily_metrics(db):
     date_range = [seven_days_ago_date + timedelta(days=i) for i in range(7)] # Dates from 7 days ago up to yesterday
 
     # Fetch logs for the date range using document ID range query
-    # Corrected path to document_id()
-    docs = db.collection('daily_logs').where(filter=FieldFilter(firestore.Client.field_path.document_id(), '>=', seven_days_ago_date.isoformat())).where(filter=FieldFilter(firestore.Client.field_path.document_id(), '<', today_date.isoformat())).stream()
+    # Use FIELD_PATH_DOCUMENT_ID for document ID queries
+    docs = db.collection('daily_logs') \
+        .where(filter=FieldFilter(firestore.FIELD_PATH_DOCUMENT_ID, '>=', seven_days_ago_date.isoformat())) \
+        .where(filter=FieldFilter(firestore.FIELD_PATH_DOCUMENT_ID, '<', today_date.isoformat())) \
+        .stream()
 
     logs_by_date = {doc.id: doc.to_dict() for doc in docs}
 
