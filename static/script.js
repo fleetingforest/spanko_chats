@@ -662,14 +662,6 @@ function displayError(data) {
             // Use the structured data from the server
             showPatreonModal(data.limit_data);
             return; // Don't show in chat
-        } else if (data.message && typeof showPatreonModal === 'function') {
-            // Extract the message content from the HTML (backward compatibility)
-            showPatreonModal({
-                title: "*SMACK* Token limit exceeded",
-                message: "Support us on Patreon to keep the spankings coming!",
-                button_text: "Join Patreon!"
-            });
-            return; // Don't show in chat
         }
     }
     

@@ -59,7 +59,7 @@ fireworks_client = OpenAI(
 )
 
 # Initialize Firebase
-cred = credentials.Certificate("/etc/secrets/spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json")  # Replace with your service account key path
+cred = credentials.Certificate("spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json")  # Replace with your service account key path
 if not firebase_admin._apps:
     firebase_admin.initialize_app(cred, {
         'storageBucket': 'spanking-chat.firebasestorage.app'  # Replace with your Firebase bucket
@@ -307,7 +307,7 @@ scenario = ""
 voice_chat_enabled = False
 
 # Database setup
-FREE_TOKEN_LIMIT = 2_500_000
+FREE_TOKEN_LIMIT = 0
 PATREON_TOKEN_LIMIT = 12_500_000
 FREE_VOICE_TOKEN_LIMIT = 50_000
 PATREON_VOICE_TOKEN_LIMIT = 250_000
@@ -1051,7 +1051,7 @@ def get_first_message():
     if voice_chat_enabled and voice_tokens <= voice_token_limit:
         try:
             # Get streaming response directly from TTS function
-            stream_response = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
+            stream_response = openai_tts_test.convert_text_to_audio(ai_response)
             if stream_response:
                 # Generate a unique streaming endpoint URL for this response
                 stream_id = str(uuid.uuid4())
@@ -1364,3 +1364,6 @@ def sitemap():
 @app.route('/google0d0cd6004b26c93e.html')
 def serve_google_verification():
     return send_from_directory(app.root_path, 'google0d0cd6004b26c93e.html')
+
+if __name__ == "__main__":
+    app.run(debug=True)
