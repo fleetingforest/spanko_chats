@@ -398,6 +398,8 @@ def update_tokens(ip_address, tokens):
         'tokens': firestore.Increment(tokens)
     }, merge=True)
 
+    update_daily_metrics('tokens', tokens)
+
 def get_voice_tokens(ip_address):
     doc_ref = db.collection('token_usage').document(ip_address)
     doc = doc_ref.get()
