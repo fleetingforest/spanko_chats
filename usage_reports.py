@@ -96,13 +96,16 @@ def collect_daily_metrics(db):
     historical_data = {'dates': [], 'tokens': [], 'queries': [], 'active_users': []}
     date_range = [seven_days_ago_date + timedelta(days=i) for i in range(7)] # Dates from 7 days ago up to yesterday
 
+    start_doc_ref = db.collection('daily_logs').document(seven_days_ago_date.isoformat())
+    end_doc_ref = db.collection('daily_logs').document(today_date.isoformat())
+
     # Fetch logs for the date range using document ID range query
     # Use FIELD_PATH_DOCUMENT_ID for document ID queries
     docs = db.collection('daily_logs') \
-        .where(filter=FieldFilter("__name__", ">=", seven_days_ago_date.isoformat())) \
-        .where(filter=FieldFilter("__name__", "<", today_date.isoformat())) \
+        .where(filter=FieldFilter("__name__", ">=", start_doc_ref.path)) \
+        .where(filter=FieldFilter("__name__", "<", end_doc_ref.path)) \
         .stream()
-
+    
     logs_by_date = {doc.id: doc.to_dict() for doc in docs}
 
     for day in date_range:
