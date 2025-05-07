@@ -102,8 +102,8 @@ def collect_daily_metrics(db):
     # Fetch logs for the date range using document ID range query
     # Use FIELD_PATH_DOCUMENT_ID for document ID queries
     docs = db.collection('daily_logs') \
-        .where(filter=FieldFilter("__name__", ">=", start_doc_ref.path)) \
-        .where(filter=FieldFilter("__name__", "<", end_doc_ref.path)) \
+        .where(filter=FieldFilter("__name__", ">=", start_doc_ref)) \
+        .where(filter=FieldFilter("__name__", "<", end_doc_ref)) \
         .stream()
     
     logs_by_date = {doc.id: doc.to_dict() for doc in docs}
