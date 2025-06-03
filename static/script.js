@@ -299,48 +299,63 @@ function sendMessage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: message, user_name: userName }),
     })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                displayError(data);
-                return Promise.reject(data);
-            });
+    .then(async response => {
+        if (!response.ok && !response.headers.get("content-type")?.includes("text/event-stream")) {
+            const data = await response.json();
+            displayError(data);
+            throw data;
         }
-        return response.json();
-    })
-    .then(data => {
-        console.log(data.status);
-        chatBox.removeChild(typingDiv);
-        if (voiceChatEnabled && data.audio_url) {
-            // Add audio control element
-            createAudioElement(data.audio_url, chatBox);
-        } else {
-            updateChat(data.conversation);
-        }
-        
-        // Display Patreon promotion if one was returned, but as a modal instead of in the chat
-        if (data.patreon_promo) {
-            // Check if we have the showPatreonModal function (newer popup implementation)
-            if (typeof showPatreonModal === 'function') {
-                showPatreonModal(data.patreon_promo);
-            } else {
-                // Fallback to old method for compatibility
-                const promoDiv = document.createElement('div');
-                promoDiv.innerHTML = data.patreon_promo;
-                chatBox.appendChild(promoDiv);
-                chatBox.scrollTop = chatBox.scrollHeight;
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        let aiDiv = document.createElement("div");
+        aiDiv.className = "ai-message";
+        let characterName = characterNames[activePersona] || activePersona;
+        aiDiv.textContent = characterName + ": ";
+        chatBox.appendChild(aiDiv);
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let parts = buffer.split("\n\n");
+            buffer = parts.pop();
+            for (const part of parts) {
+                if (!part.startsWith("data:")) continue;
+                const data = part.slice(5);
+                if (data.startsWith("{")) {
+                    const payload = JSON.parse(data);
+                    chatBox.removeChild(typingDiv);
+                    if (voiceChatEnabled && payload.audio_url) {
+                        createAudioElement(payload.audio_url, chatBox);
+                    }
+                    if (payload.patreon_promo) {
+                        if (typeof showPatreonModal === 'function') {
+                            showPatreonModal(payload.patreon_promo);
+                        } else {
+                            const promoDiv = document.createElement('div');
+                            promoDiv.innerHTML = payload.patreon_promo;
+                            chatBox.appendChild(promoDiv);
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        }
+                    }
+                    if (payload.current_persona) {
+                        activePersona = payload.current_persona;
+                    }
+                    updateChat(payload.conversation);
+                } else {
+                    if (typingDiv.parentNode) chatBox.removeChild(typingDiv);
+                    aiDiv.textContent += data;
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
             }
-        }
-        
-        // Check if the server included the current persona in response
-        if (data.current_persona) {
-            activePersona = data.current_persona;
         }
     })
     .catch(error => {
         console.error("Error:", error);
-        chatBox.removeChild(typingDiv);
-        // If error already displayed via displayError, skip fallback
+        if (typingDiv.parentNode) chatBox.removeChild(typingDiv);
         if (error.patreon_url || error.message) return;
         let errorDiv = document.createElement("div");
         errorDiv.className = "ai-message";
@@ -393,32 +408,51 @@ function getAiFirstMessage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_name: userName }),
     })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                displayError(data);
-                return Promise.reject(data);
-            });
+    .then(async response => {
+        if (!response.ok && !response.headers.get("content-type")?.includes("text/event-stream")) {
+            const data = await response.json();
+            displayError(data);
+            throw data;
         }
-        return response.json();
-    })
-    .then(data => {
-        console.log("First message received:", data.status);
-        chatBox.removeChild(typingDiv);
-        if (voiceChatEnabled && data.audio_url) {
-            // Add audio control element
-            createAudioElement(data.audio_url, chatBox);
-        } else {
-            updateChat(data.conversation);
-        }
-        // Check if the server included the current persona in response
-        if (data.current_persona) {
-            activePersona = data.current_persona;
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        let aiDiv = document.createElement("div");
+        aiDiv.className = "ai-message";
+        aiDiv.textContent = characterName + ": ";
+        chatBox.appendChild(aiDiv);
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let parts = buffer.split("\n\n");
+            buffer = parts.pop();
+            for (const part of parts) {
+                if (!part.startsWith("data:")) continue;
+                const data = part.slice(5);
+                if (data.startsWith("{")) {
+                    const payload = JSON.parse(data);
+                    chatBox.removeChild(typingDiv);
+                    if (voiceChatEnabled && payload.audio_url) {
+                        createAudioElement(payload.audio_url, chatBox);
+                    } else {
+                        updateChat(payload.conversation);
+                    }
+                    if (payload.current_persona) activePersona = payload.current_persona;
+                } else {
+                    if (typingDiv.parentNode) chatBox.removeChild(typingDiv);
+                    aiDiv.textContent += data;
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+            }
         }
     })
     .catch(error => {
         console.error("Error:", error);
-        chatBox.removeChild(typingDiv);
+        if (typingDiv.parentNode) chatBox.removeChild(typingDiv);
         if (error.patreon_url || error.message) return;
         let errorDiv = document.createElement("div");
         errorDiv.className = "ai-message";
