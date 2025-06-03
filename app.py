@@ -1,11 +1,10 @@
-from flask import Flask, render_template, request, jsonify, session, send_file, url_for, Response, redirect, flash, send_from_directory, stream_with_context
+from flask import Flask, render_template, request, jsonify, session, send_file, url_for, Response, redirect, flash, send_from_directory
 import openai_tts_test  # Import the TTS script
 import patreon_popup  # Import our custom Patreon popup module
 from openai import OpenAI
 import os
 import threading
 import time
-import json
 from datetime import datetime, timedelta, date, timezone
 from cryptography.fernet import Fernet, InvalidToken
 import hashlib
@@ -812,81 +811,89 @@ def send_message():
     # Add user message to conversation
     conversation.append({"role": "user", "content": f"{user_name}: {user_message}"})
 
-    def generate():
-        ai_text = ""
-        completion = client.chat.completions.create(
-            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-            messages=conversation,
-            stream=True
-        )
-        for chunk in completion:
-            token = chunk.choices[0].delta.content
-            if token:
-                ai_text += token
-                yield f"data:{token}\n\n"
+    # Call Llama API for AI response
+    completion = client.chat.completions.create(
+        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        messages=conversation,
+        stream=False
+    )
 
-        ai_response = ai_text.replace(". ", ".\n").replace("! ", "!\n")
+    # Add AI response to conversation
+    ai_response = completion.choices[0].message.content
+    # Post-process the response to ensure line breaks and italics
+    ai_response = ai_response.replace(". ", ".\n").replace("! ", "!\n")
 
-        persona_prefix = f"{current_persona}: "
-        character_names = {
-            "Cute little girl": "Gaby",
-            "Strict girlfriend": "Lara",
-            "Submissive Girlfriend": "Sophie",
-            "Strict teacher": "Mr. Levier",
-            "Babysitter": "Gina",
-            "Daddy": "Daddy",
-            "Mommy": "Mommy",
-            "Mischevious student": "Stewart",
-            "Cute little boy": "Eli",
-            "Bratty teen girl": "Kayla"
-        }
-        character_prefix = f"{character_names.get(current_persona, '')}: " if current_persona in character_names else None
+    # Define possible prefixes to strip
+    persona_prefix = f"{current_persona}: "
+    # Map persona titles to their specific character names
+    character_names = {
+        "Cute little girl": "Gaby",
+        "Strict girlfriend": "Lara",
+        "Submissive Girlfriend": "Sophie",
+        "Strict teacher": "Mr. Levier",
+        "Babysitter": "Gina",
+        "Daddy": "Daddy",
+        "Mommy": "Mommy",
+        "Mischevious student": "Stewart",
+        "Cute little boy": "Eli",
+        "Bratty teen girl": "Kayla"
+        # Add others if they have specific names (e.g., "Daddy" or "Mommy" might not)
+    }
+    character_prefix = f"{character_names.get(current_persona, '')}: " if current_persona in character_names else None
 
-        if ai_response.startswith(persona_prefix):
-            ai_response = ai_response[len(persona_prefix):].lstrip()
-        elif character_prefix and ai_response.startswith(character_prefix):
-            ai_response = ai_response[len(character_prefix):].lstrip()
+    # Remove either persona or character prefix if present
+    if ai_response.startswith(persona_prefix):
+        ai_response = ai_response[len(persona_prefix):].lstrip()
+    elif character_prefix and ai_response.startswith(character_prefix):
+        ai_response = ai_response[len(character_prefix):].lstrip()
+    
+    # Add the persona prefix once
+    final_response = f"{character_prefix}{ai_response}"
+    conversation.append({"role": "assistant", "content": final_response})
 
-        final_response = f"{character_prefix}{ai_response}"
-        conversation.append({"role": "assistant", "content": final_response})
+    # Update token count for the IP address
+    update_tokens(user_ip, completion.usage.total_tokens)
 
-        estimated_tokens = len(ai_text.split())
-        update_tokens(user_ip, estimated_tokens)
-        total_tokens = get_tokens(user_ip)
-        print(f"IP {user_ip} has processed {total_tokens} tokens so far.")
+    # Print the number of tokens processed so far for the user's IP address
+    total_tokens = get_tokens(user_ip)
+    print(f"IP {user_ip} has processed {total_tokens} tokens so far.")
 
-        audio_url = None
-        voice_tokens = get_voice_tokens(user_ip)
-        if voice_chat_enabled and voice_tokens <= voice_token_limit:
-            try:
-                stream_response = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
-                if stream_response:
-                    stream_id = str(uuid.uuid4())
-                    session[f'stream_{stream_id}'] = {
-                        'text': ai_response,
-                        'persona': current_persona,
-                        'created_at': datetime.now().timestamp()
-                    }
-                    audio_url = url_for('stream_audio', stream_id=stream_id)
+    # Convert AI response to audio if voice chat is enabled and token limit is not exceeded
+    audio_url = None
+    voice_tokens = get_voice_tokens(user_ip)
+    if voice_chat_enabled and voice_tokens <= voice_token_limit:
+        try:
+            # Get streaming response directly from TTS function
+            stream_response = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
+            if stream_response:
+                # Generate a unique streaming endpoint URL for this response
+                stream_id = str(uuid.uuid4())
+                session[f'stream_{stream_id}'] = {
+                    'text': ai_response,
+                    'persona': current_persona,
+                    'created_at': datetime.now().timestamp()
+                }
+                audio_url = url_for('stream_audio', stream_id=stream_id)
+                
+                # Update voice token usage
+                num_chars = len(ai_response)
+                update_voice_tokens(user_ip, num_chars)
+                voice_tokens = get_voice_tokens(user_ip)
+                print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
+        except Exception as e:
+            app.logger.error(f"Error converting text to audio for streaming: {e}")
 
-                    num_chars = len(ai_response)
-                    update_voice_tokens(user_ip, num_chars)
-                    voice_tokens = get_voice_tokens(user_ip)
-                    print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
-            except Exception as e:
-                app.logger.error(f"Error converting text to audio for streaming: {e}")
-
-        patreon_promo = check_token_thresholds(user_ip)
-        payload = {
-            "status": "Message received!",
-            "conversation": conversation[1:],
-            "current_persona": current_persona,
-            "audio_url": audio_url,
-            "patreon_promo": patreon_promo
-        }
-        yield f"data:{json.dumps(payload)}\n\n"
-
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    # Check if user has hit any token thresholds and should see a Patreon promotion
+    patreon_promo = check_token_thresholds(user_ip)
+    
+    # Return the updated conversation (excluding system prompt), current persona, audio URL, and any patreon promo
+    return jsonify({
+        "status": "Message received!", 
+        "conversation": conversation[1:],
+        "current_persona": current_persona,
+        "audio_url": audio_url,
+        "patreon_promo": patreon_promo  # This will be None if no threshold is reached
+    })
 
 @app.route("/clear", methods=["POST"])
 def clear_chat():
@@ -994,81 +1001,86 @@ def get_first_message():
     temp_messages = conversation.copy()
     temp_messages.append({"role": "user", "content": "Start the conversation based on the scenario. You are speaking to " + user_name + "."})
     
-    def generate():
-        ai_text = ""
-        completion = client.chat.completions.create(
-            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-            messages=temp_messages,
-            stream=True
-        )
-        for chunk in completion:
-            token = chunk.choices[0].delta.content
-            if token:
-                ai_text += token
-                yield f"data:{token}\n\n"
+    # Call Llama API for AI response with the temporary messages list that includes user name
+    completion = client.chat.completions.create(
+        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        messages=temp_messages,
+        stream=False
+    )
+    
+    # Add AI response to conversation
+    ai_response = completion.choices[0].message.content
+    # Post-process the response to ensure line breaks and italics
+    ai_response = ai_response.replace(". ", ".\n").replace("! ", "!\n")
 
-        ai_response = ai_text.replace(". ", ".\n").replace("! ", "!\n")
+    # Define possible prefixes to strip
+    persona_prefix = f"{current_persona}: "
+    # Map persona titles to their specific character names
+    character_names = {
+        "Cute little girl": "Gaby",
+        "Strict girlfriend": "Lara",
+        "Submissive Girlfriend": "Sophie",
+        "Strict teacher": "Mr. Levier",
+        "Babysitter": "Gina",
+        "Daddy": "Daddy",
+        "Mommy": "Mommy",
+        "Mischevious student": "Stewart", 
+        "Cute little boy": "Eli",
+        "Bratty teen girl": "Kayla"
+    }
+    character_prefix = f"{character_names.get(current_persona, '')}: " if current_persona in character_names else None
 
-        persona_prefix = f"{current_persona}: "
-        character_names = {
-            "Cute little girl": "Gaby",
-            "Strict girlfriend": "Lara",
-            "Submissive Girlfriend": "Sophie",
-            "Strict teacher": "Mr. Levier",
-            "Babysitter": "Gina",
-            "Daddy": "Daddy",
-            "Mommy": "Mommy",
-            "Mischevious student": "Stewart",
-            "Cute little boy": "Eli",
-            "Bratty teen girl": "Kayla"
-        }
-        character_prefix = f"{character_names.get(current_persona, '')}: " if current_persona in character_names else None
+    # Remove either persona or character prefix if present
+    if ai_response.startswith(persona_prefix):
+        ai_response = ai_response[len(persona_prefix):].lstrip()
+    elif character_prefix and ai_response.startswith(character_prefix):
+        ai_response = ai_response[len(character_prefix):].lstrip()
+    
+    # Add the persona prefix once
+    final_response = f"{character_prefix}{ai_response}"
+    conversation.append({"role": "assistant", "content": final_response})
 
-        if ai_response.startswith(persona_prefix):
-            ai_response = ai_response[len(persona_prefix):].lstrip()
-        elif character_prefix and ai_response.startswith(character_prefix):
-            ai_response = ai_response[len(character_prefix):].lstrip()
+    # Update token count for the IP address
+    update_tokens(user_ip, completion.usage.total_tokens)
 
-        final_response = f"{character_prefix}{ai_response}"
-        conversation.append({"role": "assistant", "content": final_response})
+    # Print the number of tokens processed so far for the user's IP address
+    total_tokens = get_tokens(user_ip)
+    print(f"IP {user_ip} has processed {total_tokens} tokens so far.")
 
-        estimated_tokens = len(ai_text.split())
-        update_tokens(user_ip, estimated_tokens)
-        total_tokens = get_tokens(user_ip)
-        print(f"IP {user_ip} has processed {total_tokens} tokens so far.")
+    # Convert AI response to audio if voice chat is enabled and token limit is not exceeded
+    audio_url = None
+    voice_tokens = get_voice_tokens(user_ip)
+    if voice_chat_enabled and voice_tokens <= voice_token_limit:
+        try:
+            # Get streaming response directly from TTS function
+            stream_response = openai_tts_test.convert_text_to_audio(ai_response)
+            if stream_response:
+                # Generate a unique streaming endpoint URL for this response
+                stream_id = str(uuid.uuid4())
+                session[f'stream_{stream_id}'] = {
+                    'text': ai_response,
+                    'persona': current_persona,
+                    'created_at': datetime.now().timestamp()
+                }
 
-        audio_url = None
-        voice_tokens = get_voice_tokens(user_ip)
-        if voice_chat_enabled and voice_tokens <= voice_token_limit:
-            try:
-                stream_response = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
-                if stream_response:
-                    stream_id = str(uuid.uuid4())
-                    session[f'stream_{stream_id}'] = {
-                        'text': ai_response,
-                        'persona': current_persona,
-                        'created_at': datetime.now().timestamp()
-                    }
-
-                    audio_url = url_for('stream_audio', stream_id=stream_id)
-
-                    num_chars = len(ai_response)
-                    update_voice_tokens(user_ip, num_chars)
-                    voice_tokens = get_voice_tokens(user_ip)
-                    print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
-            except Exception as e:
-                app.logger.error(f"Error converting text to audio for streaming: {e}")
-
-        payload = {
-            "status": "First message generated!",
-            "conversation": conversation[1:],
-            "current_persona": current_persona,
-            "audio_url": audio_url,
-            "patreon_promo": None
-        }
-        yield f"data:{json.dumps(payload)}\n\n"
-
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+                audio_url = url_for('stream_audio', stream_id=stream_id)
+                
+                # Update voice token usage
+                num_chars = len(ai_response)
+                update_voice_tokens(user_ip, num_chars)
+                voice_tokens = get_voice_tokens(user_ip)
+                print(f"IP {user_ip} has used {voice_tokens} voice tokens so far.")
+        except Exception as e:
+            app.logger.error(f"Error converting text to audio for streaming: {e}")
+        
+    # Return the updated conversation (excluding system prompt), current persona, audio URL, and any patreon promo
+    return jsonify({
+        "status": "First message generated!", 
+        "conversation": conversation[1:],
+        "current_persona": current_persona,
+        "audio_url": audio_url,
+        "patreon_promo": None  # This will be None if no threshold is reached
+    })
 
 # Add a new endpoint for streaming audio
 @app.route("/stream_audio/<stream_id>")
