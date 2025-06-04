@@ -13,6 +13,7 @@ let scenarioSet = false;
 // Variables for tracking bold formatting state during streaming
 let isBold = false;
 let processedText = "";
+let pendingCapitalization = false; // Track if we need to capitalize the next letter
 
 // Function to process streaming text with bold formatting
 function processStreamingText(newContent) {
@@ -27,22 +28,17 @@ function processStreamingText(newContent) {
                 // We're ending a bold section
                 result += '</i>';
                 isBold = false;
+                pendingCapitalization = false;
             } else {
                 // We're starting a bold section
                 result += '<i>';
                 isBold = true;
-                
-                // Look ahead to capitalize the first letter after the opening asterisk
-                if (i + 1 < newContent.length) {
-                    const nextChar = newContent[i + 1];
-                    if (nextChar && /[a-zA-Z]/.test(nextChar)) {
-                        // Skip to next iteration and add capitalized character
-                        i++;
-                        result += nextChar.toUpperCase();
-                        continue;
-                    }
-                }
+                pendingCapitalization = true; // Next letter should be capitalized
             }
+        } else if (pendingCapitalization && /[a-zA-Z]/.test(char)) {
+            // Capitalize the first letter after opening asterisk
+            result += char.toUpperCase();
+            pendingCapitalization = false;
         } else {
             // Regular character, just add it
             result += char;
@@ -56,6 +52,7 @@ function processStreamingText(newContent) {
 function resetBoldFormatting() {
     isBold = false;
     processedText = "";
+    pendingCapitalization = false;
 }
 
 // Utility function to create audio elements with autoplay
