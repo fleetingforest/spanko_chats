@@ -591,7 +591,7 @@ def send_message():
 
     # Call Llama API for AI response
     completion = client.chat.completions.create(
-        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-Turbo",
         messages=conversation,
         stream=False
     )
