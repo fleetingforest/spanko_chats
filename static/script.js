@@ -294,26 +294,22 @@ function sendMessage() {
     // Show clear chat button after the first message is sent
     document.getElementById("new-chat-button").style.display = "block";
 
-    const streamUrl = `/send_stream?message=${encodeURIComponent(message)}&user_name=${encodeURIComponent(userName)}`;
-    const evtSource = new EventSource(streamUrl);
-    let aiContent = "";
-
-    evtSource.onmessage = function(event) {
-        if (event.data === "[DONE]") {
-            evtSource.close();
-            return;
-        }
-
-        const data = JSON.parse(event.data);
-        if (data.type === "start") {
-            typingDiv.textContent = characterName + ": ";
-        } else if (data.type === "content") {
-            aiContent += data.content;
-            typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
-            chatBox.scrollTop = chatBox.scrollHeight;
-        } else if (data.type === "complete") {
-            evtSource.close();
+    if (voiceChatEnabled) {
+        // In voice mode, use the regular send endpoint instead of streaming
+        fetch("/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: message, user_name: userName })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "Token limit exceeded" || data.error) {
+                displayError(data);
+                return;
+            }
+            updateChat(data.conversation);
             if (voiceChatEnabled && data.audio_url) {
+                let chatBox = document.getElementById("chat-box");
                 createAudioElement(data.audio_url, chatBox);
             }
             if (data.patreon_promo) {
@@ -328,21 +324,61 @@ function sendMessage() {
             if (data.current_persona) {
                 activePersona = data.current_persona;
             }
-            chatBox.scrollTop = chatBox.scrollHeight;
-        } else if (data.type === "error") {
-            evtSource.close();
-            chatBox.removeChild(typingDiv);
-            displayError(data);
-        }
-    };
+        })
+        .catch(error => {
+            console.error("Error sending message:", error);
+        });
+    } else {
+        const streamUrl = `/send_stream?message=${encodeURIComponent(message)}&user_name=${encodeURIComponent(userName)}`;
+        const evtSource = new EventSource(streamUrl);
+        let aiContent = "";
 
-    evtSource.onerror = function(err) {
-        console.error("Stream error:", err);
-        evtSource.close();
-        if (chatBox.contains(typingDiv)) {
-            chatBox.removeChild(typingDiv);
-        }
-    };
+        evtSource.onmessage = function(event) {
+            if (event.data === "[DONE]") {
+                evtSource.close();
+                return;
+            }
+
+            const data = JSON.parse(event.data);
+            if (data.type === "start") {
+                typingDiv.textContent = characterName + ": ";
+            } else if (data.type === "content") {
+                aiContent += data.content;
+                typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } else if (data.type === "complete") {
+                evtSource.close();
+                if (voiceChatEnabled && data.audio_url) {
+                    createAudioElement(data.audio_url, chatBox);
+                }
+                if (data.patreon_promo) {
+                    if (typeof showPatreonModal === 'function') {
+                        showPatreonModal(data.patreon_promo);
+                    } else {
+                        const promoDiv = document.createElement('div');
+                        promoDiv.innerHTML = data.patreon_promo;
+                        chatBox.appendChild(promoDiv);
+                    }
+                }
+                if (data.current_persona) {
+                    activePersona = data.current_persona;
+                }
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } else if (data.type === "error") {
+                evtSource.close();
+                chatBox.removeChild(typingDiv);
+                displayError(data);
+            }
+        };
+
+        evtSource.onerror = function(err) {
+            console.error("Stream error:", err);
+            evtSource.close();
+            if (chatBox.contains(typingDiv)) {
+                chatBox.removeChild(typingDiv);
+            }
+        };
+    }
 
     input.value = "";
 }
@@ -382,38 +418,25 @@ function getAiFirstMessage() {
     // Show clear chat button after the first message is requested
     document.getElementById("new-chat-button").style.display = "block";
     
-    const streamUrl = `/get_first_message_stream?user_name=${encodeURIComponent(userName)}`;
-    const evtSource = new EventSource(streamUrl);
-    let aiContent = "";
-
-    evtSource.onmessage = function(event) {
-        if (event.data === "[DONE]") {
-            evtSource.close();
-            return;
-        }
-
-        const data = JSON.parse(event.data);
-        if (data.type === "start") {
-            typingDiv.textContent = characterName + ": ";
-        } else if (data.type === "content") {
-            aiContent += data.content;
-            typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
-            chatBox.scrollTop = chatBox.scrollHeight;
-        } else if (data.type === "complete") {
-            evtSource.close();
-            // Keep the streamed content as the final message without reformatting
-            typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
-
+    if (voiceChatEnabled) {
+        fetch("/get_first_message", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_name: userName })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "Token limit exceeded" || data.error) {
+                displayError(data);
+                return;
+            }
+            updateChat(data.conversation);
             if (voiceChatEnabled && data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
             }
-
-            // Update persona if changed
             if (data.current_persona) {
                 activePersona = data.current_persona;
             }
-
-            // Show Patreon promotion if provided
             if (data.patreon_promo) {
                 if (typeof showPatreonModal === 'function') {
                     showPatreonModal(data.patreon_promo);
@@ -423,22 +446,69 @@ function getAiFirstMessage() {
                     chatBox.appendChild(promoDiv);
                 }
             }
+        })
+        .catch(error => {
+            console.error("Error getting first message:", error);
+        });
+    } else {
+        const streamUrl = `/get_first_message_stream?user_name=${encodeURIComponent(userName)}`;
+        const evtSource = new EventSource(streamUrl);
+        let aiContent = "";
 
-            chatBox.scrollTop = chatBox.scrollHeight;
-        } else if (data.type === "error") {
+        evtSource.onmessage = function(event) {
+            if (event.data === "[DONE]") {
+                evtSource.close();
+                return;
+            }
+
+            const data = JSON.parse(event.data);
+            if (data.type === "start") {
+                typingDiv.textContent = characterName + ": ";
+            } else if (data.type === "content") {
+                aiContent += data.content;
+                typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } else if (data.type === "complete") {
+                evtSource.close();
+                // Keep the streamed content as the final message without reformatting
+                typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+
+                if (voiceChatEnabled && data.audio_url) {
+                    createAudioElement(data.audio_url, chatBox);
+                }
+
+                // Update persona if changed
+                if (data.current_persona) {
+                    activePersona = data.current_persona;
+                }
+
+                // Show Patreon promotion if provided
+                if (data.patreon_promo) {
+                    if (typeof showPatreonModal === 'function') {
+                        showPatreonModal(data.patreon_promo);
+                    } else {
+                        const promoDiv = document.createElement('div');
+                        promoDiv.innerHTML = data.patreon_promo;
+                        chatBox.appendChild(promoDiv);
+                    }
+                }
+
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } else if (data.type === "error") {
+                evtSource.close();
+                chatBox.removeChild(typingDiv);
+                displayError(data);
+            }
+        };
+
+        evtSource.onerror = function(err) {
+            console.error("Stream error:", err);
             evtSource.close();
-            chatBox.removeChild(typingDiv);
-            displayError(data);
-        }
-    };
-
-    evtSource.onerror = function(err) {
-        console.error("Stream error:", err);
-        evtSource.close();
-        if (chatBox.contains(typingDiv)) {
-            chatBox.removeChild(typingDiv);
-        }
-    };
+            if (chatBox.contains(typingDiv)) {
+                chatBox.removeChild(typingDiv);
+            }
+        };
+    }
 }
 
 function setScenario(triggerAiMessage = false) {
