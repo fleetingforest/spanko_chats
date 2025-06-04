@@ -961,12 +961,114 @@ def get_first_message():
         
     # Return the updated conversation (excluding system prompt), current persona, audio URL, and any patreon promo
     return jsonify({
-        "status": "First message generated!", 
+        "status": "First message generated!",
         "conversation": conversation[1:],
         "current_persona": current_persona,
         "audio_url": audio_url,
         "patreon_promo": None  # This will be None if no threshold is reached
     })
+
+# Streaming variant of the first message
+@app.route("/get_first_message_stream", methods=["GET"])
+def get_first_message_stream():
+    global conversation, current_persona, voice_chat_enabled
+    user_name = request.args.get("user_name", "You")
+    user_ip = get_client_ip()
+    user_email = session.get('user_email', None)
+
+    if user_email and is_authenticated():
+        token_limit = PATREON_TOKEN_LIMIT if get_user_patreon_status(user_email) == "active" else FREE_TOKEN_LIMIT
+        voice_token_limit = PATREON_VOICE_TOKEN_LIMIT if get_user_patreon_status(user_email) == "active" else FREE_VOICE_TOKEN_LIMIT
+    else:
+        token_limit = FREE_TOKEN_LIMIT
+        voice_token_limit = FREE_VOICE_TOKEN_LIMIT
+
+    if get_tokens(user_ip) >= token_limit:
+        def limit_error_stream():
+            yield f"data: {json.dumps({'type': 'error', 'status': 'Token limit exceeded', 'limit_data': {'title': '*SMACK* Token limit exceeded', 'message': 'Support us on Patreon to keep the spankings coming!', 'button_text': 'Join Patreon!'}})}\n\n"
+            yield "data: [DONE]\n\n"
+        return Response(limit_error_stream(), mimetype='text/event-stream')
+
+    temp_messages = conversation.copy()
+    temp_messages.append({"role": "user", "content": "Start the conversation based on the scenario. You are speaking to " + user_name + "."})
+
+    def generate_stream():
+        try:
+            completion = client.chat.completions.create(
+                model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                messages=temp_messages,
+                stream=True
+            )
+
+            ai_response = ""
+
+            yield f"data: {json.dumps({'type': 'start', 'persona': current_persona})}\n\n"
+
+            import sys
+            if hasattr(sys.stdout, 'flush'):
+                sys.stdout.flush()
+
+            for chunk in completion:
+                if chunk.choices[0].delta.content is not None:
+                    content = chunk.choices[0].delta.content
+                    ai_response += content
+                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                    if hasattr(sys.stdout, 'flush'):
+                        sys.stdout.flush()
+
+            ai_response = ai_response.replace(". ", ".\n").replace("! ", "!\n")
+
+            persona_prefix = f"{current_persona}: "
+            character_names = get_character_names()
+            character_prefix = f"{character_names.get(current_persona, '')}: " if current_persona in character_names else None
+
+            if ai_response.startswith(persona_prefix):
+                ai_response = ai_response[len(persona_prefix):].lstrip()
+            elif character_prefix and ai_response.startswith(character_prefix):
+                ai_response = ai_response[len(character_prefix):].lstrip()
+
+            final_response = f"{character_prefix}{ai_response}"
+            conversation.append({"role": "assistant", "content": final_response})
+
+            estimated_tokens = len(ai_response.split()) * 1.3
+            update_tokens(user_ip, int(estimated_tokens))
+
+            audio_url = None
+            voice_tokens = get_voice_tokens(user_ip)
+            if voice_chat_enabled and voice_tokens <= voice_token_limit:
+                try:
+                    stream_response = openai_tts_test.convert_text_to_audio(ai_response, current_persona)
+                    if stream_response:
+                        stream_id = str(uuid.uuid4())
+                        session[f'stream_{stream_id}'] = {
+                            'text': ai_response,
+                            'persona': current_persona,
+                            'created_at': datetime.now().timestamp()
+                        }
+                        audio_url = url_for('stream_audio', stream_id=stream_id)
+                        num_chars = len(ai_response)
+                        update_voice_tokens(user_ip, num_chars)
+                except Exception as e:
+                    app.logger.error(f"Error converting text to audio for streaming: {e}")
+
+            completion_data = f"data: {json.dumps({'type': 'complete', 'audio_url': audio_url, 'current_persona': current_persona, 'patreon_promo': None})}\n\n"
+            yield completion_data
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            app.logger.error(f"Error in first message streaming response: {e}")
+            error_data = f"data: {json.dumps({'type': 'error', 'message': 'An error occurred while generating the response'})}\n\n"
+            yield error_data
+            yield "data: [DONE]\n\n"
+
+    return Response(
+        generate_stream(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 # Add a new endpoint for streaming audio
 @app.route("/stream_audio/<stream_id>")

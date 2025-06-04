@@ -382,45 +382,58 @@ function getAiFirstMessage() {
     // Show clear chat button after the first message is requested
     document.getElementById("new-chat-button").style.display = "block";
     
-    // Request first message from the AI
-    fetch("/get_first_message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_name: userName }),
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                displayError(data);
-                return Promise.reject(data);
-            });
+    const streamUrl = `/get_first_message_stream?user_name=${encodeURIComponent(userName)}`;
+    const evtSource = new EventSource(streamUrl);
+    let aiContent = "";
+
+    evtSource.onmessage = function(event) {
+        if (event.data === "[DONE]") {
+            evtSource.close();
+            return;
         }
-        return response.json();
-    })
-    .then(data => {
-        console.log("First message received:", data.status);
-        chatBox.removeChild(typingDiv);
-        if (voiceChatEnabled && data.audio_url) {
-            // Add audio control element
-            createAudioElement(data.audio_url, chatBox);
-        } else {
-            updateChat(data.conversation);
+
+        const data = JSON.parse(event.data);
+        if (data.type === "start") {
+            typingDiv.textContent = characterName + ": ";
+        } else if (data.type === "content") {
+            aiContent += data.content;
+            typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+            chatBox.scrollTop = chatBox.scrollHeight;
+        } else if (data.type === "complete") {
+            evtSource.close();
+            chatBox.removeChild(typingDiv);
+            if (voiceChatEnabled && data.audio_url) {
+                createAudioElement(data.audio_url, chatBox);
+            } else if (data.conversation) {
+                updateChat(data.conversation);
+            }
+            if (data.current_persona) {
+                activePersona = data.current_persona;
+            }
+            if (data.patreon_promo) {
+                if (typeof showPatreonModal === 'function') {
+                    showPatreonModal(data.patreon_promo);
+                } else {
+                    const promoDiv = document.createElement('div');
+                    promoDiv.innerHTML = data.patreon_promo;
+                    chatBox.appendChild(promoDiv);
+                }
+            }
+            chatBox.scrollTop = chatBox.scrollHeight;
+        } else if (data.type === "error") {
+            evtSource.close();
+            chatBox.removeChild(typingDiv);
+            displayError(data);
         }
-        // Check if the server included the current persona in response
-        if (data.current_persona) {
-            activePersona = data.current_persona;
+    };
+
+    evtSource.onerror = function(err) {
+        console.error("Stream error:", err);
+        evtSource.close();
+        if (chatBox.contains(typingDiv)) {
+            chatBox.removeChild(typingDiv);
         }
-    })
-    .catch(error => {
-        console.error("Error:", error);
-        chatBox.removeChild(typingDiv);
-        if (error.patreon_url || error.message) return;
-        let errorDiv = document.createElement("div");
-        errorDiv.className = "ai-message";
-        errorDiv.textContent = activePersona + ": Oops, something went wrong!";
-        chatBox.appendChild(errorDiv);
-        chatBox.scrollTop = chatBox.scrollHeight;
-    });
+    };
 }
 
 function setScenario(triggerAiMessage = false) {
