@@ -432,6 +432,19 @@ h1.title {
     scroll-behavior: smooth;
 }
 
+/* Typing indicator animation */
+.typing-indicator {
+    color: #888;
+    font-style: italic;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
 .user-message {
     padding: 12px 15px;
     background: var(--user-msg-bg);
@@ -456,6 +469,7 @@ h1.title {
     margin-right: auto;
     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     animation: slideRight 0.3s ease;
+    transition: all 0.1s ease-out;
 }
 
 @keyframes slideRight {
