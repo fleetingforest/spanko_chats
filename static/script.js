@@ -25,11 +25,11 @@ function processStreamingText(newContent) {
             // Toggle bold state when we encounter an asterisk
             if (isBold) {
                 // We're ending a bold section
-                result += '</b>';
+                result += '</i>';
                 isBold = false;
             } else {
                 // We're starting a bold section
-                result += '<b>';
+                result += '<i>';
                 isBold = true;
             }
         } else {
@@ -419,7 +419,7 @@ function sendMessage() {
                 evtSource.close();
                 // Ensure any unclosed bold tags are properly closed
                 if (isBold) {
-                    processedText += '</b>';
+                    processedText += '</i>';
                     typingDiv.innerHTML = characterName + ": " + processedText.replace(/\n/g, "<br>");
                 }
 
