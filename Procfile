@@ -1,1 +1,1 @@
-web: gunicorn app:app --worker-class gevent --worker-connections 1000 --timeout 120
+web: gunicorn combined_app:app --worker-class gevent --worker-connections 1000 --timeout 120
