@@ -417,7 +417,7 @@ function sendMessage() {
                 chatBox.scrollTop = chatBox.scrollHeight;
             } else if (data.type === "complete") {
                 evtSource.close();
-                // Ensure any unclosed bold tags are properly closed
+                // Ensure any unclosed italic tags are properly closed
                 if (isBold) {
                     processedText += '</i>';
                     typingDiv.innerHTML = characterName + ": " + processedText.replace(/\n/g, "<br>");
@@ -573,8 +573,11 @@ function getAiFirstMessage() {
                 chatBox.scrollTop = chatBox.scrollHeight;
             } else if (data.type === "complete") {
                 evtSource.close();
-                // Keep the streamed content as the final message without reformatting
-                typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+                // Ensure any unclosed italic tags are properly closed
+                if (isBold) {
+                    processedText += '</i>';
+                    typingDiv.innerHTML = characterName + ": " + processedText.replace(/\n/g, "<br>");
+                }
 
                 // Update persona if changed
                 if (data.current_persona) {
