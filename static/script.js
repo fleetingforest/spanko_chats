@@ -23,14 +23,14 @@ function processStreamingText(newContent) {
         const char = newContent[i];
         
         if (char === '*') {
-            // Toggle bold state when we encounter an asterisk
+            // Toggle italic state when we encounter an asterisk
             if (isBold) {
-                // We're ending a bold section
+                // We're ending an italic section
                 result += '</i>';
                 isBold = false;
                 pendingCapitalization = false;
             } else {
-                // We're starting a bold section
+                // We're starting an italic section
                 result += '<i>';
                 isBold = true;
                 pendingCapitalization = true; // Next letter should be capitalized
