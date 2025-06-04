@@ -31,6 +31,17 @@ function processStreamingText(newContent) {
                 // We're starting a bold section
                 result += '<i>';
                 isBold = true;
+                
+                // Look ahead to capitalize the first letter after the opening asterisk
+                if (i + 1 < newContent.length) {
+                    const nextChar = newContent[i + 1];
+                    if (nextChar && /[a-zA-Z]/.test(nextChar)) {
+                        // Skip to next iteration and add capitalized character
+                        i++;
+                        result += nextChar.toUpperCase();
+                        continue;
+                    }
+                }
             }
         } else {
             // Regular character, just add it
