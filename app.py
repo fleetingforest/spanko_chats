@@ -593,7 +593,7 @@ def send_message():
 
     # Call Llama API for AI response
     completion = client.chat.completions.create(
-        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        model="deepseek-ai/DeepSeek-V3-0324",
         messages=conversation,
         stream=False
     )
@@ -698,7 +698,7 @@ def send_message_stream():
         try:
             # Call Llama API for AI response with streaming enabled
             completion = client.chat.completions.create(
-                model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                model="deepseek-ai/DeepSeek-V3-0324",
                 messages=conversation,
                 stream=True
             )
@@ -889,7 +889,7 @@ def get_first_message():
     
     # Call Llama API for AI response with the temporary messages list that includes user name
     completion = client.chat.completions.create(
-        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        model="deepseek-ai/DeepSeek-V3-0324",
         messages=temp_messages,
         stream=False
     )
