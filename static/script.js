@@ -707,6 +707,15 @@ function updateChat(conversation) {
     console.log("Updating chat with:", conversation);
 
     conversation.forEach(msg => {
+        // In voice chat mode, skip displaying AI text messages
+        if (voiceChatEnabled && msg.role === "assistant") {
+            // Skip adding the AI message div, but still handle audio if present
+            if (msg.audio_url) {
+                createAudioElement(msg.audio_url, chatBox);
+            }
+            return; // Skip the rest of the processing for AI messages in voice mode
+        }
+
         let messageDiv = document.createElement("div");
         messageDiv.className = msg.role === "user" ? "user-message" : "ai-message";
         
