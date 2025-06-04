@@ -10,6 +10,43 @@ let personaSet = false;
 let nameSet = false;
 let scenarioSet = false;
 
+// Variables for tracking bold formatting state during streaming
+let isBold = false;
+let processedText = "";
+
+// Function to process streaming text with bold formatting
+function processStreamingText(newContent) {
+    let result = "";
+    
+    for (let i = 0; i < newContent.length; i++) {
+        const char = newContent[i];
+        
+        if (char === '*') {
+            // Toggle bold state when we encounter an asterisk
+            if (isBold) {
+                // We're ending a bold section
+                result += '</b>';
+                isBold = false;
+            } else {
+                // We're starting a bold section
+                result += '<b>';
+                isBold = true;
+            }
+        } else {
+            // Regular character, just add it
+            result += char;
+        }
+    }
+    
+    return result;
+}
+
+// Function to reset bold formatting state
+function resetBoldFormatting() {
+    isBold = false;
+    processedText = "";
+}
+
 // Utility function to create audio elements with autoplay
 function createAudioElement(audioUrl, container) {
     let audioDiv = document.createElement("div");
@@ -188,7 +225,7 @@ function completeOnboarding() {
         });
         return;
     } else if (!shouldBeVoiceChatPage && isVoiceChatPage) {
-        // Set the internal redirect flag before redirecting - both local and in localStorage
+        // Set the internal redirect flag before redirecting - both local and inLocalStorage
         isInternalRedirect = true;
         localStorage.setItem('isInternalRedirect', 'true');
         
@@ -356,6 +393,9 @@ function sendMessage() {
         const evtSource = new EventSource(streamUrl);
         let aiContent = "";
 
+        // Reset bold formatting state for new message
+        resetBoldFormatting();
+
         evtSource.onmessage = function(event) {
             if (event.data === "[DONE]") {
                 evtSource.close();
@@ -365,12 +405,30 @@ function sendMessage() {
             const data = JSON.parse(event.data);
             if (data.type === "start") {
                 typingDiv.textContent = characterName + ": ";
+                // Reset bold formatting state when starting new message
+                resetBoldFormatting();
             } else if (data.type === "content") {
-                aiContent += data.content;
-                typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+                // Process the new content chunk with bold formatting
+                const processedChunk = processStreamingText(data.content);
+                processedText += processedChunk;
+                
+                // Update the display with the processed text
+                typingDiv.innerHTML = characterName + ": " + processedText.replace(/\n/g, "<br>");
                 chatBox.scrollTop = chatBox.scrollHeight;
             } else if (data.type === "complete") {
                 evtSource.close();
+                // Ensure any unclosed bold tags are properly closed
+                if (isBold) {
+                    processedText += '</b>';
+                    typingDiv.innerHTML = characterName + ": " + processedText.replace(/\n/g, "<br>");
+                }
+
+                // Update persona if changed
+                if (data.current_persona) {
+                    activePersona = data.current_persona;
+                }
+
+                // Show Patreon promotion if provided
                 if (data.patreon_promo) {
                     if (typeof showPatreonModal === 'function') {
                         showPatreonModal(data.patreon_promo);
@@ -380,9 +438,7 @@ function sendMessage() {
                         chatBox.appendChild(promoDiv);
                     }
                 }
-                if (data.current_persona) {
-                    activePersona = data.current_persona;
-                }
+
                 chatBox.scrollTop = chatBox.scrollHeight;
             } else if (data.type === "error") {
                 evtSource.close();
@@ -495,6 +551,9 @@ function getAiFirstMessage() {
         const evtSource = new EventSource(streamUrl);
         let aiContent = "";
 
+        // Reset bold formatting state for new message
+        resetBoldFormatting();
+
         evtSource.onmessage = function(event) {
             if (event.data === "[DONE]") {
                 evtSource.close();
@@ -505,8 +564,12 @@ function getAiFirstMessage() {
             if (data.type === "start") {
                 typingDiv.textContent = characterName + ": ";
             } else if (data.type === "content") {
-                aiContent += data.content;
-                typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+                // Process the new content chunk with bold formatting
+                const processedChunk = processStreamingText(data.content);
+                processedText += processedChunk;
+                
+                // Update the display with the processed text
+                typingDiv.innerHTML = characterName + ": " + processedText.replace(/\n/g, "<br>");
                 chatBox.scrollTop = chatBox.scrollHeight;
             } else if (data.type === "complete") {
                 evtSource.close();
