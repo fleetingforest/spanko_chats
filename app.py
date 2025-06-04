@@ -1051,7 +1051,7 @@ def get_first_message_stream():
                 except Exception as e:
                     app.logger.error(f"Error converting text to audio for streaming: {e}")
 
-            completion_data = f"data: {json.dumps({'type': 'complete', 'audio_url': audio_url, 'current_persona': current_persona, 'patreon_promo': None})}\n\n"
+            completion_data = f"data: {json.dumps({'type': 'complete', 'audio_url': audio_url, 'current_persona': current_persona, 'patreon_promo': None, 'conversation': conversation[1:]})}\n\n"
             yield completion_data
             yield "data: [DONE]\n\n"
         except Exception as e:
