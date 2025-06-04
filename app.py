@@ -708,13 +708,23 @@ def send_message_stream():
             # Send initial metadata
             yield f"data: {json.dumps({'type': 'start', 'persona': current_persona})}\n\n"
             
+            # Force flush the initial data
+            import sys
+            if hasattr(sys.stdout, 'flush'):
+                sys.stdout.flush()
+            
             for chunk in completion:
                 if chunk.choices[0].delta.content is not None:
                     content = chunk.choices[0].delta.content
                     ai_response += content
                     
                     # Send each chunk to the client
-                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                    chunk_data = f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                    yield chunk_data
+                    
+                    # Force flush each chunk
+                    if hasattr(sys.stdout, 'flush'):
+                        sys.stdout.flush()
             
             # Post-process the complete response
             ai_response = ai_response.replace(". ", ".\n").replace("! ", "!\n")
@@ -763,12 +773,14 @@ def send_message_stream():
             patreon_promo = check_token_thresholds(user_ip)
             
             # Send completion metadata
-            yield f"data: {json.dumps({'type': 'complete', 'audio_url': audio_url, 'patreon_promo': patreon_promo, 'current_persona': current_persona})}\n\n"
+            completion_data = f"data: {json.dumps({'type': 'complete', 'audio_url': audio_url, 'patreon_promo': patreon_promo, 'current_persona': current_persona})}\n\n"
+            yield completion_data
             yield "data: [DONE]\n\n"
             
         except Exception as e:
             app.logger.error(f"Error in streaming response: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred while generating the response'})}\n\n"
+            error_data = f"data: {json.dumps({'type': 'error', 'message': 'An error occurred while generating the response'})}\n\n"
+            yield error_data
             yield "data: [DONE]\n\n"
 
     return Response(

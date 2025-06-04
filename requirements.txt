@@ -1,6 +1,7 @@
 openai
 flask
 gunicorn
+gevent
 pydub
 requests
 flask-security-too 
