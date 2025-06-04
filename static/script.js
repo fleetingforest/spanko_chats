@@ -267,15 +267,12 @@ function sendMessage() {
 
     let chatBox = document.getElementById("chat-box");
     
-    // Don't add user message to chat box in voice mode for regular messages
-    // (we'll let updateChat handle it properly)
-    if (!voiceChatEnabled) {
-        let userDiv = document.createElement("div");
-        userDiv.className = "user-message";
-        userDiv.textContent = userName + ": " + message;
-        chatBox.appendChild(userDiv);
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
+    // Always add user message to chat box immediately when sent
+    let userDiv = document.createElement("div");
+    userDiv.className = "user-message";
+    userDiv.textContent = userName + ": " + message;
+    chatBox.appendChild(userDiv);
+    chatBox.scrollTop = chatBox.scrollHeight;
 
     let typingDiv = document.createElement("div");
     typingDiv.className = "ai-message";
@@ -322,32 +319,9 @@ function sendMessage() {
                 return;
             }
 
-            // For voice mode: Add user message manually first
-            let userDiv = document.createElement("div");
-            userDiv.className = "user-message";
-            userDiv.textContent = userName + ": " + message;
-            chatBox.appendChild(userDiv);
-
-            // Add AI voice placeholder
-            let voicePlaceholder = document.createElement("div");
-            voicePlaceholder.className = "ai-message voice-only";
-            voicePlaceholder.innerHTML = "🔊";
-            chatBox.appendChild(voicePlaceholder);
-
-            // Add audio element
+            // For voice mode: Just add the audio element directly
             if (data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
-            }
-
-            // Handle Patreon promo
-            if (data.patreon_promo) {
-                if (typeof showPatreonModal === 'function') {
-                    showPatreonModal(data.patreon_promo);
-                } else {
-                    const promoDiv = document.createElement('div');
-                    promoDiv.innerHTML = data.patreon_promo;
-                    chatBox.appendChild(promoDiv);
-                }
             }
 
             // Update persona if changed
@@ -472,14 +446,7 @@ function getAiFirstMessage() {
                 return;
             }
 
-            // For voice mode: Don't call updateChat, manually handle the display
-            // Add AI voice placeholder
-            let voicePlaceholder = document.createElement("div");
-            voicePlaceholder.className = "ai-message voice-only";
-            voicePlaceholder.innerHTML = "🔊";
-            chatBox.appendChild(voicePlaceholder);
-
-            // Add audio element
+            // For voice mode: Just add the audio element directly
             if (data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
             }
