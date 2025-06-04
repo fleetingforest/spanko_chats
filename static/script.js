@@ -294,28 +294,40 @@ function sendMessage() {
     // Show clear chat button after the first message is sent
     document.getElementById("new-chat-button").style.display = "block";
 
-    const streamUrl = `/send_stream?message=${encodeURIComponent(message)}&user_name=${encodeURIComponent(userName)}`;
-    const evtSource = new EventSource(streamUrl);
-    let aiContent = "";
+    // Use different endpoints based on voice chat mode
+    if (voiceChatEnabled) {
+        // For voice chat, use the non-streaming endpoint to get complete text for TTS
+        fetch("/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                message: message,
+                user_name: userName 
+            }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Remove typing indicator
+            if (chatBox.contains(typingDiv)) {
+                chatBox.removeChild(typingDiv);
+            }
 
-    evtSource.onmessage = function(event) {
-        if (event.data === "[DONE]") {
-            evtSource.close();
-            return;
-        }
+            if (data.status && data.status.includes("exceeded")) {
+                displayError(data);
+                return;
+            }
 
-        const data = JSON.parse(event.data);
-        if (data.type === "start") {
-            typingDiv.textContent = characterName + ": ";
-        } else if (data.type === "content") {
-            aiContent += data.content;
-            typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
-            chatBox.scrollTop = chatBox.scrollHeight;
-        } else if (data.type === "complete") {
-            evtSource.close();
-            if (voiceChatEnabled && data.audio_url) {
+            // Update the chat with the complete conversation
+            if (data.conversation) {
+                updateChat(data.conversation);
+            }
+
+            // Handle audio for voice chat
+            if (data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
             }
+
+            // Handle Patreon promo
             if (data.patreon_promo) {
                 if (typeof showPatreonModal === 'function') {
                     showPatreonModal(data.patreon_promo);
@@ -325,24 +337,70 @@ function sendMessage() {
                     chatBox.appendChild(promoDiv);
                 }
             }
+
+            // Update persona if changed
             if (data.current_persona) {
                 activePersona = data.current_persona;
             }
-            chatBox.scrollTop = chatBox.scrollHeight;
-        } else if (data.type === "error") {
-            evtSource.close();
-            chatBox.removeChild(typingDiv);
-            displayError(data);
-        }
-    };
 
-    evtSource.onerror = function(err) {
-        console.error("Stream error:", err);
-        evtSource.close();
-        if (chatBox.contains(typingDiv)) {
-            chatBox.removeChild(typingDiv);
-        }
-    };
+            chatBox.scrollTop = chatBox.scrollHeight;
+        })
+        .catch(error => {
+            console.error("Error sending message:", error);
+            if (chatBox.contains(typingDiv)) {
+                chatBox.removeChild(typingDiv);
+            }
+            displayError({ status: "Error", message: "Failed to send message. Please try again." });
+        });
+    } else {
+        // For text chat, use streaming endpoint for better user experience
+        const streamUrl = `/send_stream?message=${encodeURIComponent(message)}&user_name=${encodeURIComponent(userName)}`;
+        const evtSource = new EventSource(streamUrl);
+        let aiContent = "";
+
+        evtSource.onmessage = function(event) {
+            if (event.data === "[DONE]") {
+                evtSource.close();
+                return;
+            }
+
+            const data = JSON.parse(event.data);
+            if (data.type === "start") {
+                typingDiv.textContent = characterName + ": ";
+            } else if (data.type === "content") {
+                aiContent += data.content;
+                typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } else if (data.type === "complete") {
+                evtSource.close();
+                if (data.patreon_promo) {
+                    if (typeof showPatreonModal === 'function') {
+                        showPatreonModal(data.patreon_promo);
+                    } else {
+                        const promoDiv = document.createElement('div');
+                        promoDiv.innerHTML = data.patreon_promo;
+                        chatBox.appendChild(promoDiv);
+                    }
+                }
+                if (data.current_persona) {
+                    activePersona = data.current_persona;
+                }
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } else if (data.type === "error") {
+                evtSource.close();
+                chatBox.removeChild(typingDiv);
+                displayError(data);
+            }
+        };
+
+        evtSource.onerror = function(err) {
+            console.error("Stream error:", err);
+            evtSource.close();
+            if (chatBox.contains(typingDiv)) {
+                chatBox.removeChild(typingDiv);
+            }
+        };
+    }
 
     input.value = "";
 }
@@ -382,29 +440,33 @@ function getAiFirstMessage() {
     // Show clear chat button after the first message is requested
     document.getElementById("new-chat-button").style.display = "block";
     
-    const streamUrl = `/get_first_message_stream?user_name=${encodeURIComponent(userName)}`;
-    const evtSource = new EventSource(streamUrl);
-    let aiContent = "";
+    // Use different endpoints based on voice chat mode
+    if (voiceChatEnabled) {
+        // For voice chat, use the non-streaming endpoint to get complete text for TTS
+        fetch("/get_first_message", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_name: userName }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Remove typing indicator
+            if (chatBox.contains(typingDiv)) {
+                chatBox.removeChild(typingDiv);
+            }
 
-    evtSource.onmessage = function(event) {
-        if (event.data === "[DONE]") {
-            evtSource.close();
-            return;
-        }
+            if (data.status && data.status.includes("exceeded")) {
+                displayError(data);
+                return;
+            }
 
-        const data = JSON.parse(event.data);
-        if (data.type === "start") {
-            typingDiv.textContent = characterName + ": ";
-        } else if (data.type === "content") {
-            aiContent += data.content;
-            typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
-            chatBox.scrollTop = chatBox.scrollHeight;
-        } else if (data.type === "complete") {
-            evtSource.close();
-            // Keep the streamed content as the final message without reformatting
-            typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+            // Update the chat with the complete conversation
+            if (data.conversation) {
+                updateChat(data.conversation);
+            }
 
-            if (voiceChatEnabled && data.audio_url) {
+            // Handle audio for voice chat
+            if (data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
             }
 
@@ -425,20 +487,70 @@ function getAiFirstMessage() {
             }
 
             chatBox.scrollTop = chatBox.scrollHeight;
-        } else if (data.type === "error") {
-            evtSource.close();
-            chatBox.removeChild(typingDiv);
-            displayError(data);
-        }
-    };
+        })
+        .catch(error => {
+            console.error("Error getting first message:", error);
+            if (chatBox.contains(typingDiv)) {
+                chatBox.removeChild(typingDiv);
+            }
+            displayError({ status: "Error", message: "Failed to get first message. Please try again." });
+        });
+    } else {
+        // For text chat, use streaming endpoint for better user experience
+        const streamUrl = `/get_first_message_stream?user_name=${encodeURIComponent(userName)}`;
+        const evtSource = new EventSource(streamUrl);
+        let aiContent = "";
 
-    evtSource.onerror = function(err) {
-        console.error("Stream error:", err);
-        evtSource.close();
-        if (chatBox.contains(typingDiv)) {
-            chatBox.removeChild(typingDiv);
-        }
-    };
+        evtSource.onmessage = function(event) {
+            if (event.data === "[DONE]") {
+                evtSource.close();
+                return;
+            }
+
+            const data = JSON.parse(event.data);
+            if (data.type === "start") {
+                typingDiv.textContent = characterName + ": ";
+            } else if (data.type === "content") {
+                aiContent += data.content;
+                typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } else if (data.type === "complete") {
+                evtSource.close();
+                // Keep the streamed content as the final message without reformatting
+                typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+
+                // Update persona if changed
+                if (data.current_persona) {
+                    activePersona = data.current_persona;
+                }
+
+                // Show Patreon promotion if provided
+                if (data.patreon_promo) {
+                    if (typeof showPatreonModal === 'function') {
+                        showPatreonModal(data.patreon_promo);
+                    } else {
+                        const promoDiv = document.createElement('div');
+                        promoDiv.innerHTML = data.patreon_promo;
+                        chatBox.appendChild(promoDiv);
+                    }
+                }
+
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } else if (data.type === "error") {
+                evtSource.close();
+                chatBox.removeChild(typingDiv);
+                displayError(data);
+            }
+        };
+
+        evtSource.onerror = function(err) {
+            console.error("Stream error:", err);
+            evtSource.close();
+            if (chatBox.contains(typingDiv)) {
+                chatBox.removeChild(typingDiv);
+            }
+        };
+    }
 }
 
 function setScenario(triggerAiMessage = false) {
