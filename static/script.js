@@ -665,6 +665,16 @@ function updateChat(conversation) {
     console.log("Updating chat with:", conversation);
 
     conversation.forEach(msg => {
+        // In voice chat mode we only want to play the AI's audio, not show the
+        // text content. Skip rendering assistant text while still allowing
+        // audio elements to be added if present.
+        if (voiceChatEnabled && msg.role === "assistant") {
+            if (msg.audio_url) {
+                createAudioElement(msg.audio_url, chatBox);
+            }
+            return;
+        }
+
         let messageDiv = document.createElement("div");
         messageDiv.className = msg.role === "user" ? "user-message" : "ai-message";
         
