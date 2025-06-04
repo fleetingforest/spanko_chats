@@ -401,16 +401,19 @@ function getAiFirstMessage() {
             chatBox.scrollTop = chatBox.scrollHeight;
         } else if (data.type === "complete") {
             evtSource.close();
-            chatBox.removeChild(typingDiv);
+            // Keep the streamed content as the final message without reformatting
+            typingDiv.innerHTML = characterName + ": " + aiContent.replace(/\n/g, "<br>");
+
             if (voiceChatEnabled && data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
             }
-            if (data.conversation) {
-                updateChat(data.conversation);
-            }
+
+            // Update persona if changed
             if (data.current_persona) {
                 activePersona = data.current_persona;
             }
+
+            // Show Patreon promotion if provided
             if (data.patreon_promo) {
                 if (typeof showPatreonModal === 'function') {
                     showPatreonModal(data.patreon_promo);
@@ -420,6 +423,7 @@ function getAiFirstMessage() {
                     chatBox.appendChild(promoDiv);
                 }
             }
+
             chatBox.scrollTop = chatBox.scrollHeight;
         } else if (data.type === "error") {
             evtSource.close();
