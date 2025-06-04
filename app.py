@@ -1,4 +1,7 @@
-from flask import Flask, render_template, request, jsonify, session, send_file, url_for, Response, redirect, flash, send_from_directory
+from flask import (
+    Flask, render_template, request, jsonify, session, send_file, url_for,
+    Response, redirect, flash, send_from_directory, stream_with_context
+)
 import openai_tts_test  # Import the TTS script
 from openai import OpenAI
 import os
@@ -784,7 +787,7 @@ def send_message_stream():
             yield "data: [DONE]\n\n"
 
     return Response(
-        generate_stream(),
+        stream_with_context(generate_stream()),
         mimetype='text/event-stream',
         headers={
             'Cache-Control': 'no-cache',
@@ -1061,7 +1064,7 @@ def get_first_message_stream():
             yield "data: [DONE]\n\n"
 
     return Response(
-        generate_stream(),
+        stream_with_context(generate_stream()),
         mimetype='text/event-stream',
         headers={
             'Cache-Control': 'no-cache',
