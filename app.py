@@ -616,7 +616,8 @@ def send_message():
     
     # Add the persona prefix once
     final_response = f"{character_prefix}{ai_response}"
-    conversation.append({"role": "assistant", "content": final_response})
+    assistant_msg = {"role": "assistant", "content": final_response}
+    conversation.append(assistant_msg)
 
     # Update token count for the IP address
     update_tokens(user_ip, completion.usage.total_tokens)
@@ -641,6 +642,7 @@ def send_message():
                     'created_at': datetime.now().timestamp()
                 }
                 audio_url = url_for('stream_audio', stream_id=stream_id)
+                assistant_msg['audio_url'] = audio_url
                 
                 # Update voice token usage
                 num_chars = len(ai_response)
@@ -742,7 +744,8 @@ def send_message_stream():
             
             # Add the persona prefix once
             final_response = f"{character_prefix}{ai_response}"
-            conversation.append({"role": "assistant", "content": final_response})
+            assistant_msg = {"role": "assistant", "content": final_response}
+            conversation.append(assistant_msg)
 
             # Estimate token usage (since streaming doesn't provide usage info)
             estimated_tokens = len(ai_response.split()) * 1.3  # Rough estimate
@@ -762,6 +765,7 @@ def send_message_stream():
                             'created_at': datetime.now().timestamp()
                         }
                         audio_url = url_for('stream_audio', stream_id=stream_id)
+                        assistant_msg['audio_url'] = audio_url
                         
                         # Update voice token usage
                         num_chars = len(ai_response)
@@ -924,7 +928,8 @@ def get_first_message():
     
     # Add the persona prefix once
     final_response = f"{character_prefix}{ai_response}"
-    conversation.append({"role": "assistant", "content": final_response})
+    assistant_msg = {"role": "assistant", "content": final_response}
+    conversation.append(assistant_msg)
 
     # Update token count for the IP address
     update_tokens(user_ip, completion.usage.total_tokens)
@@ -950,7 +955,8 @@ def get_first_message():
                 }
 
                 audio_url = url_for('stream_audio', stream_id=stream_id)
-                
+                assistant_msg['audio_url'] = audio_url
+
                 # Update voice token usage
                 num_chars = len(ai_response)
                 update_voice_tokens(user_ip, num_chars)
@@ -1028,7 +1034,8 @@ def get_first_message_stream():
                 ai_response = ai_response[len(character_prefix):].lstrip()
 
             final_response = f"{character_prefix}{ai_response}"
-            conversation.append({"role": "assistant", "content": final_response})
+            assistant_msg = {"role": "assistant", "content": final_response}
+            conversation.append(assistant_msg)
 
             estimated_tokens = len(ai_response.split()) * 1.3
             update_tokens(user_ip, int(estimated_tokens))
@@ -1046,6 +1053,7 @@ def get_first_message_stream():
                             'created_at': datetime.now().timestamp()
                         }
                         audio_url = url_for('stream_audio', stream_id=stream_id)
+                        assistant_msg['audio_url'] = audio_url
                         num_chars = len(ai_response)
                         update_voice_tokens(user_ip, num_chars)
                 except Exception as e:
