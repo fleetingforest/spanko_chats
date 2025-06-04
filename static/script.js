@@ -266,11 +266,16 @@ function sendMessage() {
     if (message === "") return;
 
     let chatBox = document.getElementById("chat-box");
-    let userDiv = document.createElement("div");
-    userDiv.className = "user-message";
-    userDiv.textContent = userName + ": " + message;  // Use userName here
-    chatBox.appendChild(userDiv);
-    chatBox.scrollTop = chatBox.scrollHeight;
+    
+    // Don't add user message to chat box in voice mode for regular messages
+    // (we'll let updateChat handle it properly)
+    if (!voiceChatEnabled) {
+        let userDiv = document.createElement("div");
+        userDiv.className = "user-message";
+        userDiv.textContent = userName + ": " + message;
+        chatBox.appendChild(userDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
 
     let typingDiv = document.createElement("div");
     typingDiv.className = "ai-message";
@@ -317,22 +322,24 @@ function sendMessage() {
                 return;
             }
 
-            // Update the chat with the complete conversation first
-            if (data.conversation) {
-                updateChat(data.conversation);
-            }
+            // For voice mode: Add user message manually first
+            let userDiv = document.createElement("div");
+            userDiv.className = "user-message";
+            userDiv.textContent = userName + ": " + message;
+            chatBox.appendChild(userDiv);
 
-            // Then add audio for voice chat (after updateChat so it doesn't get cleared)
-            if (voiceChatEnabled && data.audio_url) {
+            // Add AI voice placeholder
+            let voicePlaceholder = document.createElement("div");
+            voicePlaceholder.className = "ai-message voice-only";
+            voicePlaceholder.innerHTML = "🔊";
+            chatBox.appendChild(voicePlaceholder);
+
+            // Add audio element
+            if (data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
             }
 
-            // Update persona if changed
-            if (data.current_persona) {
-                activePersona = data.current_persona;
-            }
-
-            // Show Patreon promotion if provided
+            // Handle Patreon promo
             if (data.patreon_promo) {
                 if (typeof showPatreonModal === 'function') {
                     showPatreonModal(data.patreon_promo);
@@ -341,6 +348,11 @@ function sendMessage() {
                     promoDiv.innerHTML = data.patreon_promo;
                     chatBox.appendChild(promoDiv);
                 }
+            }
+
+            // Update persona if changed
+            if (data.current_persona) {
+                activePersona = data.current_persona;
             }
 
             chatBox.scrollTop = chatBox.scrollHeight;
@@ -460,14 +472,16 @@ function getAiFirstMessage() {
                 return;
             }
 
-            // For voice chat, handle audio first, then update chat (which will skip AI text)
-            if (voiceChatEnabled && data.audio_url) {
-                createAudioElement(data.audio_url, chatBox);
-            }
+            // For voice mode: Don't call updateChat, manually handle the display
+            // Add AI voice placeholder
+            let voicePlaceholder = document.createElement("div");
+            voicePlaceholder.className = "ai-message voice-only";
+            voicePlaceholder.innerHTML = "🔊";
+            chatBox.appendChild(voicePlaceholder);
 
-            // Update the chat with the complete conversation (will skip AI text in voice mode)
-            if (data.conversation) {
-                updateChat(data.conversation);
+            // Add audio element
+            if (data.audio_url) {
+                createAudioElement(data.audio_url, chatBox);
             }
 
             // Update persona if changed
