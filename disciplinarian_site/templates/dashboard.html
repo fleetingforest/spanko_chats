@@ -5,8 +5,18 @@
     <title>Disciplinarian Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script>
+        function showSection(id) {
+            document.querySelectorAll('.section').forEach(sec => sec.style.display = 'none');
+            document.getElementById(id).style.display = 'block';
+            if(id === 'history') loadHistory();
+            if(id === 'rules') loadRules();
+            if(id === 'punishments') loadPunishments();
+            if(id === 'todo') loadTodos();
+        }
+
         async function sendMessage() {
             const message = document.getElementById('user-input').value;
+            if(!message) return;
             const res = await fetch('/chat', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -17,12 +27,60 @@
             chatBox.value += '\nYou: ' + message + '\nAI: ' + data.reply;
             document.getElementById('user-input').value = '';
         }
+
+        async function loadHistory(){
+            const res = await fetch('/data/history');
+            const history = await res.json();
+            const list = document.getElementById('history-list');
+            list.innerHTML = '';
+            history.forEach(h => { if(h.role==='user'||h.role==='assistant'){ const li = document.createElement('li'); li.textContent = h.role+': '+h.content; list.appendChild(li);} });
+        }
+        async function loadRules(){
+            const res = await fetch('/data/rules');
+            const rules = await res.json();
+            const list = document.getElementById('rules-list');
+            list.innerHTML = '';
+            rules.forEach(r => { const li = document.createElement('li'); li.textContent = r; list.appendChild(li); });
+        }
+        async function loadPunishments(){
+            const res = await fetch('/data/punishments');
+            const items = await res.json();
+            const list = document.getElementById('punishments-list');
+            list.innerHTML = '';
+            items.forEach(p => { const li = document.createElement('li'); li.textContent = p.text + (p.completed ? ' (done)' : ''); list.appendChild(li); });
+        }
+        async function loadTodos(){
+            const res = await fetch('/data/todos');
+            const items = await res.json();
+            const list = document.getElementById('todo-list');
+            list.innerHTML = '';
+            items.forEach(t => { const li = document.createElement('li'); li.textContent = t.text + (t.completed ? ' (done)' : ''); list.appendChild(li); });
+        }
     </script>
 </head>
 <body>
     <h1>Welcome, {{ session.user_name }}</h1>
-    <textarea id="chat-box" rows="10" cols="80" readonly></textarea><br>
-    <input type="text" id="user-input">
-    <button onclick="sendMessage()">Send</button>
+    <nav>
+        <button onclick="showSection('chat')">Chat</button>
+        <button onclick="showSection('history')">History</button>
+        <button onclick="showSection('rules')">Rules</button>
+        <button onclick="showSection('punishments')">Punishments</button>
+        <button onclick="showSection('todo')">To-Do</button>
+    </nav>
+    <div id="chat" class="section">
+        {% include 'chat_section.html' %}
+    </div>
+    <div id="history" class="section" style="display:none">
+        {% include 'history_section.html' %}
+    </div>
+    <div id="rules" class="section" style="display:none">
+        {% include 'rules_section.html' %}
+    </div>
+    <div id="punishments" class="section" style="display:none">
+        {% include 'punishments_section.html' %}
+    </div>
+    <div id="todo" class="section" style="display:none">
+        {% include 'todo_section.html' %}
+    </div>
 </body>
 </html>
