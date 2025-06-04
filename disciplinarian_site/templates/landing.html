@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Disciplinarian Setup</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Welcome to the Disciplinarian Experience</h1>
+    <form method="post">
+        <label>Your Name: <input type="text" name="name" required></label><br>
+        <label>Your Gender: <input type="text" name="gender" required></label><br>
+        <h3>Customize Your Disciplinarian</h3>
+        <label>Disciplinarian Name: <input type="text" name="d_name" required></label><br>
+        <label>Gender: <input type="text" name="d_gender" required></label><br>
+        <label>Age: <input type="number" name="d_age" required></label><br>
+        <label>Personality: <input type="text" name="d_personality" required></label><br>
+        <label>Strictness (1-10): <input type="number" name="strictness" min="1" max="10" required></label><br>
+        <p>Select Punishments:</p>
+        <label><input type="checkbox" name="punishments" value="bare bottom spanking"> Bare Bottom Spanking</label><br>
+        <label><input type="checkbox" name="punishments" value="lines"> Lines</label><br>
+        <label><input type="checkbox" name="punishments" value="corner time"> Corner Time</label><br>
+        <label><input type="checkbox" name="punishments" value="mouth soaping"> Mouth Soaping</label><br>
+        <button type="submit">Continue</button>
+    </form>
+</body>
+</html>
