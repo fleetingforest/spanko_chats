@@ -294,99 +294,60 @@ function sendMessage() {
     // Show clear chat button after the first message is sent
     document.getElementById("new-chat-button").style.display = "block";
 
-    // Create response div for streaming
-    let responseDiv = document.createElement("div");
-    responseDiv.className = "ai-message";
-    responseDiv.innerHTML = characterName + ": ";
-    
-    // Use streaming endpoint
-    const eventSource = new EventSource(`/send_stream?message=${encodeURIComponent(message)}&user_name=${encodeURIComponent(userName)}`);
-    
-    let fullResponse = "";
-    let hasStarted = false;
-    
-    eventSource.onmessage = function(event) {
-        if (event.data === "[DONE]") {
-            eventSource.close();
-            return;
-        }
-        
-        try {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'start') {
-                chatBox.removeChild(typingDiv);
-                chatBox.appendChild(responseDiv);
-                hasStarted = true;
-                activePersona = data.persona;
-            } else if (data.type === 'content') {
-                fullResponse += data.content;
-                
-                let formattedContent = fullResponse
-                    .replace(/\*([\w\s,'\-\.;:!?]+?)\*/g, (match, p1) => {
-                        let capitalized = p1.charAt(0).toUpperCase() + p1.slice(1);
-                        return `<i>${capitalized}</i>`;
-                    })
-                    .replace(/\b_([\w\s,'\-\.;:!?]+?)_\b/g, (match, p1) => {
-                        let capitalized = p1.charAt(0).toUpperCase() + p1.slice(1);
-                        return `<i>${capitalized}</i>`;
-                    })
-                    .replace(/\n/g, "<br>");
-                
-                responseDiv.innerHTML = characterName + ": " + formattedContent;
-                chatBox.scrollTop = chatBox.scrollHeight;
-            } else if (data.type === 'complete') {
-                if (voiceChatEnabled && data.audio_url) {
-                    // Add audio control element
-                    createAudioElement(data.audio_url, chatBox);
-                }
-                
-                // Display Patreon promotion if one was returned, but as a modal instead of in the chat
-                if (data.patreon_promo) {
-                    // Check if we have the showPatreonModal function (newer popup implementation)
-                    if (typeof showPatreonModal === 'function') {
-                        showPatreonModal(data.patreon_promo);
-                    } else {
-                        // Fallback to old method for compatibility
-                        const promoDiv = document.createElement('div');
-                        promoDiv.innerHTML = data.patreon_promo;
-                        chatBox.appendChild(promoDiv);
-                        chatBox.scrollTop = chatBox.scrollHeight;
-                    }
-                }
-                
-                // Check if the server included the current persona in response
-                if (data.current_persona) {
-                    activePersona = data.current_persona;
-                }
-            } else if (data.type === 'error') {
-                eventSource.close();
-                if (!hasStarted) {
-                    chatBox.removeChild(typingDiv);
-                }
+    fetch("/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: message, user_name: userName }),
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
                 displayError(data);
+                return Promise.reject(data);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log(data.status);
+        chatBox.removeChild(typingDiv);
+        if (voiceChatEnabled && data.audio_url) {
+            // Add audio control element
+            createAudioElement(data.audio_url, chatBox);
+        } else {
+            updateChat(data.conversation);
+        }
+        
+        // Display Patreon promotion if one was returned, but as a modal instead of in the chat
+        if (data.patreon_promo) {
+            // Check if we have the showPatreonModal function (newer popup implementation)
+            if (typeof showPatreonModal === 'function') {
+                showPatreonModal(data.patreon_promo);
+            } else {
+                // Fallback to old method for compatibility
+                const promoDiv = document.createElement('div');
+                promoDiv.innerHTML = data.patreon_promo;
+                chatBox.appendChild(promoDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
             }
-        } catch (e) {
-            console.error("Error parsing streaming data:", e);
-        }
-    };
-    
-    eventSource.onerror = function(event) {
-        console.error("EventSource error:", event);
-        eventSource.close();
-        
-        if (!hasStarted) {
-            chatBox.removeChild(typingDiv);
         }
         
+        // Check if the server included the current persona in response
+        if (data.current_persona) {
+            activePersona = data.current_persona;
+        }
+    })
+    .catch(error => {
+        console.error("Error:", error);
+        chatBox.removeChild(typingDiv);
         // If error already displayed via displayError, skip fallback
-if (error.patreon_url || error.message) return;
+        if (error.patreon_url || error.message) return;
         let errorDiv = document.createElement("div");
         errorDiv.className = "ai-message";
         errorDiv.textContent = activePersona + ": Oops, something went wrong!";
         chatBox.appendChild(errorDiv);
         chatBox.scrollTop = chatBox.scrollHeight;
-    };
+    });
 
     input.value = "";
 }
