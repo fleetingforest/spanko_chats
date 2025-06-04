@@ -3,6 +3,7 @@ import openai_tts_test  # Import the TTS script
 from openai import OpenAI
 import os
 import time
+import json
 from datetime import datetime, timedelta, date, timezone
 from cryptography.fernet import Fernet, InvalidToken
 import hashlib
@@ -17,6 +18,7 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from flask_mail import Mail, Message
 import usage_reports  # Import our new usage reporting module
 from personas import get_personas, get_character_names, get_standard_system_prompt  # Import personas from separate file
+import traceback
 
 
 
@@ -591,7 +593,7 @@ def send_message():
 
     # Call Llama API for AI response
     completion = client.chat.completions.create(
-        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-Turbo",
+        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-turbo",
         messages=conversation,
         stream=False
     )
@@ -696,7 +698,7 @@ def send_message_stream():
         try:
             # Call Llama API for AI response with streaming enabled
             completion = client.chat.completions.create(
-                model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-turbo",
                 messages=conversation,
                 stream=True
             )
@@ -887,7 +889,7 @@ def get_first_message():
     
     # Call Llama API for AI response with the temporary messages list that includes user name
     completion = client.chat.completions.create(
-        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-turbo",
         messages=temp_messages,
         stream=False
     )
@@ -1059,7 +1061,6 @@ def transcribe_audio():
         app.logger.error(f"Error transcribing audio with Fireworks: {str(e)}")
         
         # Add more detailed error logging
-        import traceback
         app.logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Clean up temporary file if it exists
