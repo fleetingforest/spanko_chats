@@ -404,7 +404,8 @@ function getAiFirstMessage() {
             chatBox.removeChild(typingDiv);
             if (voiceChatEnabled && data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
-            } else if (data.conversation) {
+            }
+            if (data.conversation) {
                 updateChat(data.conversation);
             }
             if (data.current_persona) {
