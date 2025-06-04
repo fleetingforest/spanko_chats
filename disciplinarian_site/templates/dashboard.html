@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Disciplinarian Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script>
+        async function sendMessage() {
+            const message = document.getElementById('user-input').value;
+            const res = await fetch('/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message})
+            });
+            const data = await res.json();
+            const chatBox = document.getElementById('chat-box');
+            chatBox.value += '\nYou: ' + message + '\nAI: ' + data.reply;
+            document.getElementById('user-input').value = '';
+        }
+    </script>
+</head>
+<body>
+    <h1>Welcome, {{ session.user_name }}</h1>
+    <textarea id="chat-box" rows="10" cols="80" readonly></textarea><br>
+    <input type="text" id="user-input">
+    <button onclick="sendMessage()">Send</button>
+</body>
+</html>
