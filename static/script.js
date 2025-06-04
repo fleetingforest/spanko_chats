@@ -317,14 +317,14 @@ function sendMessage() {
                 return;
             }
 
-            // Update the chat with the complete conversation
-            if (data.conversation) {
-                updateChat(data.conversation);
+            // For voice chat, handle audio first, then update chat (which will skip AI text)
+            if (voiceChatEnabled && data.audio_url) {
+                createAudioElement(data.audio_url, chatBox);
             }
 
-            // Handle audio for voice chat
-            if (data.audio_url) {
-                createAudioElement(data.audio_url, chatBox);
+            // Update the chat with the complete conversation (will skip AI text in voice mode)
+            if (data.conversation) {
+                updateChat(data.conversation);
             }
 
             // Handle Patreon promo
@@ -460,14 +460,14 @@ function getAiFirstMessage() {
                 return;
             }
 
-            // Update the chat with the complete conversation
-            if (data.conversation) {
-                updateChat(data.conversation);
+            // For voice chat, handle audio first, then update chat (which will skip AI text)
+            if (voiceChatEnabled && data.audio_url) {
+                createAudioElement(data.audio_url, chatBox);
             }
 
-            // Handle audio for voice chat
-            if (data.audio_url) {
-                createAudioElement(data.audio_url, chatBox);
+            // Update the chat with the complete conversation (will skip AI text in voice mode)
+            if (data.conversation) {
+                updateChat(data.conversation);
             }
 
             // Update persona if changed
