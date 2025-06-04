@@ -267,7 +267,7 @@ function sendMessage() {
 
     let chatBox = document.getElementById("chat-box");
     
-    // Always add user message to chat box immediately when sent
+    // Add user message to chat box immediately for both modes
     let userDiv = document.createElement("div");
     userDiv.className = "user-message";
     userDiv.textContent = userName + ": " + message;
@@ -319,7 +319,8 @@ function sendMessage() {
                 return;
             }
 
-            // For voice mode: Just add the audio element directly
+            // For voice mode: Don't call updateChat, manually handle the display
+            // Add audio element
             if (data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
             }
@@ -327,6 +328,17 @@ function sendMessage() {
             // Update persona if changed
             if (data.current_persona) {
                 activePersona = data.current_persona;
+            }
+
+            // Show Patreon promotion if provided
+            if (data.patreon_promo) {
+                if (typeof showPatreonModal === 'function') {
+                    showPatreonModal(data.patreon_promo);
+                } else {
+                    const promoDiv = document.createElement('div');
+                    promoDiv.innerHTML = data.patreon_promo;
+                    chatBox.appendChild(promoDiv);
+                }
             }
 
             chatBox.scrollTop = chatBox.scrollHeight;
@@ -446,7 +458,8 @@ function getAiFirstMessage() {
                 return;
             }
 
-            // For voice mode: Just add the audio element directly
+            // For voice mode: Don't call updateChat, manually handle the display
+            // Add audio element
             if (data.audio_url) {
                 createAudioElement(data.audio_url, chatBox);
             }
@@ -690,13 +703,7 @@ function updateChat(conversation) {
     conversation.forEach(msg => {
         // In voice chat mode, handle AI messages differently
         if (voiceChatEnabled && msg.role === "assistant") {
-            // For AI messages in voice mode, create a placeholder div to maintain conversation flow
-            // but don't show the text content
-            let audioPlaceholderDiv = document.createElement("div");
-            audioPlaceholderDiv.className = "ai-message voice-only";
-            audioPlaceholderDiv.innerHTML = "🔊"; // Simple audio icon to show AI spoke
-            chatBox.appendChild(audioPlaceholderDiv);
-            
+            // For AI messages in voice mode, just add the audio element
             // If there's an audio URL attached to this message, create the audio element
             if (msg.audio_url) {
                 createAudioElement(msg.audio_url, chatBox);
