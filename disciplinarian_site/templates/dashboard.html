@@ -15,17 +15,61 @@
         }
 
         async function sendMessage() {
-            const message = document.getElementById('user-input').value;
-            if(!message) return;
-            const res = await fetch('/chat', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message})
-            });
-            const data = await res.json();
+            const userInput = document.getElementById('user-input');
+            const message = userInput.value.trim();
+            if (!message) return;
+
             const chatBox = document.getElementById('chat-box');
-            chatBox.value += '\nYou: ' + message + '\nAI: ' + data.reply;
-            document.getElementById('user-input').value = '';
+            // Display user's message immediately
+            chatBox.value += '\nYou: ' + message;
+            // Scroll to bottom after adding user message
+            chatBox.scrollTop = chatBox.scrollHeight; 
+            
+            userInput.value = ''; // Clear input field immediately
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message})
+                });
+
+                let aiResponseText = '';
+
+                if (!res.ok) {
+                    let errorMsg = `Error: ${res.status} ${res.statusText}`;
+                    try {
+                        const errorData = await res.json();
+                        if (errorData && errorData.error) {
+                            errorMsg = `Server error: ${errorData.error}`;
+                        } else if (errorData && errorData.reply) { // Handle cases where error might be in 'reply'
+                            errorMsg = `Server note: ${errorData.reply}`;
+                        }
+                    } catch (e) {
+                        // Failed to parse error response as JSON, stick with status text
+                        // Or the response was not JSON at all (e.g. HTML error page)
+                        const rawErrorText = await res.text(); // Attempt to get raw text
+                        errorMsg = `Error: ${res.status} ${res.statusText}. Response: ${rawErrorText.substring(0,100)}`;
+                    }
+                    aiResponseText = errorMsg;
+                    console.error('Chat API error:', errorMsg);
+                } else {
+                    const data = await res.json();
+                    if (data && data.reply) {
+                        aiResponseText = data.reply;
+                    } else {
+                        aiResponseText = 'Received an empty or invalid response from server.';
+                        console.error('Chat API response error: data or data.reply is missing', data);
+                    }
+                }
+                chatBox.value += '\nAI: ' + aiResponseText;
+
+            } catch (error) {
+                chatBox.value += '\nAI: Failed to send message. Network error or server issue.';
+                console.error('Failed to send message:', error);
+            }
+            // Scroll to bottom after AI response or error
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
 
         async function loadHistory(){

@@ -248,14 +248,15 @@ def chat():
         }
 
     system_prompt = generate_system_prompt(disciplinarian_config)
-    if not conversation or (conversation[0]['role'] == 'system' and conversation[0]['content'] != system_prompt):
-        # Update system prompt if it's new or changed
-        if conversation and conversation[0]['role'] == 'system':
-            conversation[0]['content'] = system_prompt
-        else:
-            conversation.insert(0, {'role': 'system', 'content': system_prompt})
-    elif not conversation: # Should be caught by above, but as a safeguard
+    
+    # Ensure system prompt is the first message and is up-to-date
+    if not conversation:
         conversation.append({'role': 'system', 'content': system_prompt})
+    elif conversation[0]['role'] == 'system':
+        if conversation[0]['content'] != system_prompt:
+            conversation[0]['content'] = system_prompt
+    else: # conversation exists but doesn't start with a system prompt
+        conversation.insert(0, {'role': 'system', 'content': system_prompt})
         
     conversation.append({'role': 'user', 'content': message})
 
