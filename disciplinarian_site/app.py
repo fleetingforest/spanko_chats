@@ -3,7 +3,7 @@ import os
 import uuid
 from passlib.hash import pbkdf2_sha256
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, storage
 from openai import OpenAI
 
 app = Flask(__name__)
@@ -20,11 +20,14 @@ else:
     fireworks_client = None
 
 # Initialize Firebase
-firebase_credentials = os.getenv("FIREBASE_CREDENTIALS", "spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json")
-if os.path.exists(firebase_credentials):
-    cred = credentials.Certificate(firebase_credentials)
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
+cred = credentials.Certificate("spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json")  # Replace with your service account key path
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred, {
+        'storageBucket': 'spanking-chat.firebasestorage.app'  # Replace with your Firebase bucket
+    })
+    bucket = storage.bucket()
+
+    # Initialize Firestore
     db = firestore.client()
 else:
     db = None  # Fall back to in-memory store when credentials are missing
