@@ -7,7 +7,6 @@ from firebase_admin import credentials, firestore, storage
 from openai import OpenAI
 
 app = Flask(__name__)
-app.secret_key = os.getenv("DISCIPLINE_SECRET", "discipline-secret-key")
 
 # Initialize Fireworks AI client
 fireworks_api_key = os.getenv("FIREWORKS_API_KEY")
