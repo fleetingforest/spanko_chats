@@ -12,20 +12,73 @@
             if(id === 'rules') loadRules();
             if(id === 'punishments') loadPunishments();
             if(id === 'todo') loadTodos();
+            if(id === 'chat') populateChatBoxWithHistory(); // Load chat history when chat section is shown
+        }
+
+        async function populateChatBoxWithHistory() {
+            const chatBox = document.getElementById('chat-box');
+            try {
+                const res = await fetch('/data/history');
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`);
+                }
+                const history = await res.json();
+                chatBox.value = ''; // Clear existing content
+                history.forEach(h => {
+                    if (h.role === 'user') {
+                        chatBox.value += 'You: ' + h.content + '\n';
+                    } else if (h.role === 'assistant') {
+                        chatBox.value += 'AI: ' + h.content + '\n';
+                    }
+                    // System messages from history can be ignored for display in chat-box or handled if needed
+                });
+                chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
+            } catch (error) {
+                console.error("Failed to load chat history:", error);
+                if (chatBox) { // Ensure chatBox exists before trying to set its value
+                    chatBox.value += "\nError loading chat history.\n";
+                }
+            }
         }
 
         async function sendMessage() {
-            const message = document.getElementById('user-input').value;
+            const userInput = document.getElementById('user-input');
+            const message = userInput.value.trim(); // Trim whitespace
             if(!message) return;
-            const res = await fetch('/chat', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message})
-            });
-            const data = await res.json();
+
             const chatBox = document.getElementById('chat-box');
-            chatBox.value += '\nYou: ' + message + '\nAI: ' + data.reply;
-            document.getElementById('user-input').value = '';
+            
+            // Display user's message immediately
+            chatBox.value += '\nYou: ' + message + '\n';
+            userInput.value = ''; // Clear input field
+            chatBox.scrollTop = chatBox.scrollHeight; // Scroll down
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message})
+                });
+
+                let data;
+                if (!res.ok) {
+                    // Try to parse error response, otherwise use status text
+                    try {
+                        data = await res.json();
+                    } catch (e) {
+                        data = { reply: `Error: ${res.statusText || 'Failed to send message'}` };
+                    }
+                    // Use error from JSON if available, otherwise the generic one
+                    chatBox.value += 'AI: ' + (data.error || data.reply || `Failed to get response. Status: ${res.status}`) + '\n';
+                } else {
+                    data = await res.json();
+                    chatBox.value += 'AI: ' + data.reply + '\n';
+                }
+            } catch (error) {
+                console.error("SendMessage failed:", error);
+                chatBox.value += 'AI: Sorry, an error occurred while sending your message.\n';
+            }
+            chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
         }
 
         async function loadHistory(){
@@ -56,6 +109,11 @@
             list.innerHTML = '';
             items.forEach(t => { const li = document.createElement('li'); li.textContent = t.text + (t.completed ? ' (done)' : ''); list.appendChild(li); });
         }
+
+        // Initial load: show chat section and populate its history
+        window.onload = function() {
+            showSection('chat');
+        };
     </script>
 </head>
 <body>

@@ -221,28 +221,54 @@ def chat():
         return jsonify({'error': 'Unauthorized'}), 401
     message = request.json.get('message')
     email = session['user_email']
+    
+    profile_ref = None
     if db:
         profile_ref = db.collection('discipline_profiles').document(email)
         profile_doc = profile_ref.get()
         profile = profile_doc.to_dict() if profile_doc.exists else {}
     else:
-        profile_ref = None
         profile = in_memory_db['discipline_profiles'].get(email, {})
+    
     conversation = profile.get('history', [])
 
-    system_prompt = generate_system_prompt(profile['disciplinarian'])
-    if not conversation:
+    disciplinarian_config = profile.get('disciplinarian')
+    if not isinstance(disciplinarian_config, dict):
+        # Fallback to a very generic disciplinarian if config is missing or invalid
+        disciplinarian_config = {
+            'name': "Disciplinarian", 
+            'age': "an unspecified age", 
+            'gender': "an unspecified gender",
+            'personality': "standard", 
+            'strictness': "moderate", 
+            'punishments': []
+        }
+
+    system_prompt = generate_system_prompt(disciplinarian_config)
+    if not conversation or (conversation[0]['role'] == 'system' and conversation[0]['content'] != system_prompt):
+        # Update system prompt if it's new or changed
+        if conversation and conversation[0]['role'] == 'system':
+            conversation[0]['content'] = system_prompt
+        else:
+            conversation.insert(0, {'role': 'system', 'content': system_prompt})
+    elif not conversation: # Should be caught by above, but as a safeguard
         conversation.append({'role': 'system', 'content': system_prompt})
+        
     conversation.append({'role': 'user', 'content': message})
 
     if fireworks_client:
-        response = fireworks_client.chat.completions.create(
-            model="accounts/fireworks/models/deepseek-v3-0324",
-            messages=conversation
-        )
-        reply = response.choices[0].message.content
+        try:
+            response = fireworks_client.chat.completions.create(
+                model="accounts/fireworks/models/deepseek-coder-6.7b-instruct", # Example model, adjust as needed
+                messages=conversation
+            )
+            reply = response.choices[0].message.content
+        except Exception as e:
+            # Log the error e
+            reply = "Sorry, I encountered an error trying to respond."
     else:
-        reply = f"(AI response placeholder) {message}"  # Fallback when no API key
+        reply = f"(AI response placeholder) You said: {message}"  # Fallback when no API key
+    
     conversation.append({'role': 'assistant', 'content': reply})
 
     if db and profile_ref:
@@ -253,13 +279,27 @@ def chat():
 
 # Utility to build system prompt from disciplinarian config
 def generate_system_prompt(config):
-    punishments = ', '.join(config.get('punishments', []))
+    if not isinstance(config, dict):
+        config = {} # Ensure config is a dictionary
+
+    name = config.get('name') or "Your Disciplinarian"
+    age = str(config.get('age') or "an unspecified age") # Ensure age is string for f-string
+    gender = config.get('gender') or "an unspecified gender"
+    personality = config.get('personality') or "a standard"
+    strictness = config.get('strictness') or "moderate"
+    
+    punishments_list = config.get('punishments', [])
+    if isinstance(punishments_list, list) and punishments_list:
+        punishments_str = ', '.join(punishments_list)
+    else:
+        punishments_str = "not specified"
+
     prompt = (
-        f"You are {config['name']}, a {config['age']}-year-old {config['gender']} disciplinarian. "
-        f"Your personality is {config['personality']} and your strictness level is {config['strictness']}. "
-        f"You believe in punishments such as: {punishments}. "
+        f"You are {name}, a {age}-year-old {gender} disciplinarian. "
+        f"Your personality is {personality} and your strictness level is {strictness}. "
+        f"You believe in punishments such as: {punishments_str}. "
         "Your goal is to discipline and support the user with firm but caring guidance. "
-        "If the user breaks established rules you must assign an appropriate punishment from the list."
+        "If the user breaks established rules you must assign an appropriate punishment from the list of available punishments."
     )
     return prompt
 
