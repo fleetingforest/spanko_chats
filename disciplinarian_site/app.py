@@ -127,6 +127,13 @@ def login():
         flash(message)
     return render_template('login_user.html')
 
+@app.route('/logout') # Add this new route
+def logout():
+    session.pop('user_email', None)
+    session.pop('fs_uniquifier', None)
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
+
 @app.route('/dashboard')
 def dashboard():
     if 'user_email' not in session:
