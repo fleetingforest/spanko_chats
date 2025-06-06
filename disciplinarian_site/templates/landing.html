@@ -6,6 +6,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <p>Already have an account? <a href="{{ url_for('login') }}">Login</a></p>
     <h1>Welcome to the Disciplinarian Experience</h1>
     <form method="post">
         <label>Your Name: <input type="text" name="name" required></label><br>
@@ -23,5 +24,6 @@
         <label><input type="checkbox" name="punishments" value="mouth soaping"> Mouth Soaping</label><br>
         <button type="submit">Continue</button>
     </form>
+    
 </body>
 </html>

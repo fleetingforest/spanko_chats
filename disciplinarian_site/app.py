@@ -7,6 +7,8 @@ from firebase_admin import credentials, firestore, storage
 from openai import OpenAI
 
 app = Flask(__name__)
+app.secret_key = os.getenv("DISCIPLINE_SECRET", "discipline-secret-key")
+
 
 # Initialize Fireworks AI client
 fireworks_api_key = os.getenv("FIREWORKS_API_KEY")
@@ -20,7 +22,7 @@ else:
 
 # Initialize Firebase
 # Use the same credentials file as the main app, assuming execution from project root
-cred_path = "/etc/secrets/spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json" # Changed path
+cred_path = "spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json" # Changed path
 db = None # Initialize db to None in case initialization fails
 bucket = None # Initialize bucket to None
 
