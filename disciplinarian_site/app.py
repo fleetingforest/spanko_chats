@@ -21,7 +21,7 @@ else:
 
 # Initialize Firebase
 # Use the same credentials file as the main app, assuming execution from project root
-cred_path = "spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json" # Changed path
+cred_path = "/etc/secrets/spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json" # Changed path
 db = None # Initialize db to None in case initialization fails
 bucket = None # Initialize bucket to None
 
