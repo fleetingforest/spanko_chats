@@ -237,7 +237,7 @@ def chat():
 
     if fireworks_client:
         response = fireworks_client.chat.completions.create(
-            model="deepseek-v3-0324",
+            model="accounts/fireworks/models/deepseek-v3-0324",
             messages=conversation
         )
         reply = response.choices[0].message.content
