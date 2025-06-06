@@ -20,61 +20,59 @@ else:
     fireworks_client = None
 
 # Initialize Firebase
-cred = credentials.Certificate("spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json")  # Replace with your service account key path
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred, {
-        'storageBucket': 'spanking-chat.firebasestorage.app'  # Replace with your Firebase bucket
-    })
-    bucket = storage.bucket()
+# Use the same credentials file as the main app, assuming execution from project root
+cred_path = "spanking-chat-firebase-adminsdk-fbsvc-e7307d7abb.json" # Changed path
+db = None # Initialize db to None in case initialization fails
+bucket = None # Initialize bucket to None
 
-    # Initialize Firestore
+try:
+    cred = credentials.Certificate(cred_path)
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred, {
+            'storageBucket': 'spanking-chat.firebasestorage.app'
+        })
     db = firestore.client()
-else:
-    db = None  # Fall back to in-memory store when credentials are missing
-    in_memory_db = {
-        'discipline_users': {},
-        'discipline_profiles': {}
-    }
+    bucket = storage.bucket() # bucket is used by other parts of the app, so initialize it
+except Exception as e:
+    app.logger.error(f"Failed to initialize Firebase: {e}. Running without Firebase.")
+    # The app will proceed without db, and functions using db will need to handle db being None
+    # or raise errors. For this specific request, we aim to use the main DB.
+    # If Firebase is critical, the app should ideally not run or have a more robust error handling.
 
 # ----- Helper functions -----
 def register_user(email, password):
-    """Register a new user either in Firestore or the in-memory store."""
-    if db:
-        user_ref = db.collection('discipline_users').document(email)
-        if user_ref.get().exists:
-            return False, "Email already registered"
-        hashed = pbkdf2_sha256.hash(password)
-        user_ref.set({
-            'email': email,
-            'password': hashed,
-            'created_at': firestore.SERVER_TIMESTAMP
-        })
-    else:
-        if email in in_memory_db['discipline_users']:
-            return False, "Email already registered"
-        hashed = pbkdf2_sha256.hash(password)
-        in_memory_db['discipline_users'][email] = {
-            'email': email,
-            'password': hashed
-        }
+    """Register a new user in Firestore using the 'users' collection."""
+    if not db:
+        return False, "Database not available"
+    user_ref = db.collection('users').document(email) # Changed collection to 'users'
+    if user_ref.get().exists:
+        return False, "Email already registered"
+    hashed_password = pbkdf2_sha256.hash(password)
+    user_ref.set({
+        'email': email,
+        'password': hashed_password,
+        'active': True,  # Added field
+        'fs_uniquifier': str(uuid.uuid4()),  # Added field
+        'roles': ['user'],  # Added field
+        'created_at': firestore.SERVER_TIMESTAMP
+    })
     return True, "Registration successful"
 
 def login_user(email, password):
-    """Validate user credentials."""
-    if db:
-        user_ref = db.collection('discipline_users').document(email)
-        doc = user_ref.get()
-        if not doc.exists:
-            return False, "User not found"
-        data = doc.to_dict()
-    else:
-        data = in_memory_db['discipline_users'].get(email)
-        if not data:
-            return False, "User not found"
-    if pbkdf2_sha256.verify(password, data['password']):
+    """Validate user credentials against the 'users' collection."""
+    if not db:
+        return False, "Database not available"
+    user_ref = db.collection('users').document(email) # Changed collection to 'users'
+    doc = user_ref.get()
+    if not doc.exists:
+        return False, "User not found"
+    user_data = doc.to_dict()
+    # Check password and if user is active
+    if user_data and pbkdf2_sha256.verify(password, user_data.get('password')) and user_data.get('active', False): # Added check for user_data
         session['user_email'] = email
+        session['fs_uniquifier'] = user_data.get('fs_uniquifier') # Added to session
         return True, "Login successful"
-    return False, "Invalid credentials"
+    return False, "Invalid credentials or user inactive"
 
 # ----- Routes -----
 @app.route('/', methods=['GET', 'POST'])
@@ -114,8 +112,6 @@ def signup():
             }
             if db:
                 db.collection('discipline_profiles').document(email).set(profile)
-            else:
-                in_memory_db['discipline_profiles'][email] = profile
             return redirect(url_for('dashboard'))
         flash(message)
     return render_template('signup.html')
@@ -139,16 +135,13 @@ def dashboard():
 
 # ----- Data Endpoints -----
 def _get_profile(email):
-    if db:
-        doc = db.collection('discipline_profiles').document(email).get()
-        return doc.to_dict() if doc.exists else {}
-    return in_memory_db['discipline_profiles'].get(email, {})
+    if not db: return {}
+    profile_doc = db.collection('discipline_profiles').document(email).get() # Corrected variable name
+    return profile_doc.to_dict() if profile_doc.exists else {} # Corrected variable name
 
-def _update_profile(email, fields):
-    if db:
-        db.collection('discipline_profiles').document(email).update(fields)
-    else:
-        in_memory_db['discipline_profiles'][email].update(fields)
+def _update_profile(email, fields): # Corrected function definition
+    if not db: return
+    db.collection('discipline_profiles').document(email).update(fields) # Corrected indentation
 
 @app.route('/data/history')
 def get_history():
@@ -220,66 +213,90 @@ def add_todo():
 # Chat endpoint using Fireworks DeepSeek model
 @app.route('/chat', methods=['POST'])
 def chat():
-    if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
-    message = request.json.get('message')
-    email = session['user_email']
-    
-    profile_ref = None
-    if db:
-        profile_ref = db.collection('discipline_profiles').document(email)
-        profile_doc = profile_ref.get()
-        profile = profile_doc.to_dict() if profile_doc.exists else {}
-    else:
-        profile = in_memory_db['discipline_profiles'].get(email, {})
-    
-    conversation = profile.get('history', [])
-
-    disciplinarian_config = profile.get('disciplinarian')
-    if not isinstance(disciplinarian_config, dict):
-        # Fallback to a very generic disciplinarian if config is missing or invalid
-        disciplinarian_config = {
-            'name': "Disciplinarian", 
-            'age': "an unspecified age", 
-            'gender': "an unspecified gender",
-            'personality': "standard", 
-            'strictness': "moderate", 
-            'punishments': []
-        }
-
-    system_prompt = generate_system_prompt(disciplinarian_config)
-    
-    # Ensure system prompt is the first message and is up-to-date
-    if not conversation:
-        conversation.append({'role': 'system', 'content': system_prompt})
-    elif conversation[0]['role'] == 'system':
-        if conversation[0]['content'] != system_prompt:
-            conversation[0]['content'] = system_prompt
-    else: # conversation exists but doesn't start with a system prompt
-        conversation.insert(0, {'role': 'system', 'content': system_prompt})
+    try:
+        if 'user_email' not in session:
+            return jsonify({'error': 'Unauthorized - No user session'}), 401
         
-    conversation.append({'role': 'user', 'content': message})
+        if not request.is_json:
+            return jsonify({'error': 'Invalid request: Content-Type must be application/json'}), 400
+            
+        data = request.get_json()
+        if not data: # Handles cases where request.is_json is true but data is null (e.g. empty body)
+            return jsonify({'error': 'Invalid request: No JSON data received'}), 400
 
-    if fireworks_client:
-        try:
-            response = fireworks_client.chat.completions.create(
-                model="accounts/fireworks/models/deepseek-v3-0324", # Example model, adjust as needed
-                messages=conversation
-            )
-            reply = response.choices[0].message.content
-        except Exception as e:
-            # Log the error e
-            reply = "Sorry, I encountered an error trying to respond."
-    else:
-        reply = f"(AI response placeholder) You said: {message}"  # Fallback when no API key
-    
-    conversation.append({'role': 'assistant', 'content': reply})
+        message = data.get('message')
+        if not message:
+            return jsonify({'error': 'Invalid request: No message provided in JSON payload'}), 400
 
-    if db and profile_ref:
-        profile_ref.update({'history': conversation})
-    else:
-        in_memory_db['discipline_profiles'][email]['history'] = conversation
-    return jsonify({'reply': reply})
+        email = session['user_email']
+        
+        profile_ref = None
+        profile = {} # Initialize profile
+        if db:
+            profile_ref = db.collection('discipline_profiles').document(email)
+            profile_doc = profile_ref.get()
+            profile = profile_doc.to_dict() if profile_doc.exists else {}
+        # else: # Removed in-memory fallback
+            # profile = in_memory_db['discipline_profiles'].get(email, {}) # Removed in-memory_db reference
+
+        if not profile: # Should not happen if user is logged in and profile created at signup
+            return jsonify({'error': 'User profile not found'}), 500
+
+        conversation = profile.get('history', [])
+
+        disciplinarian_config = profile.get('disciplinarian')
+        if not isinstance(disciplinarian_config, dict):
+            disciplinarian_config = {
+                'name': "Disciplinarian", 
+                'age': "an unspecified age", 
+                'gender': "an unspecified gender",
+                'personality': "standard", 
+                'strictness': "moderate", 
+                'punishments': []
+            }
+
+        system_prompt = generate_system_prompt(disciplinarian_config)
+        
+        if not conversation:
+            conversation.append({'role': 'system', 'content': system_prompt})
+        elif conversation[0]['role'] == 'system':
+            if conversation[0]['content'] != system_prompt:
+                conversation[0]['content'] = system_prompt
+        else: 
+            conversation.insert(0, {'role': 'system', 'content': system_prompt})
+            
+        conversation.append({'role': 'user', 'content': message})
+
+        reply_content = ""
+        if fireworks_client:
+            try:
+                response = fireworks_client.chat.completions.create(
+                    model="accounts/fireworks/models/deepseek-v3-0324",
+                    messages=conversation
+                )
+                reply_content = response.choices[0].message.content
+            except Exception as e:
+                app.logger.error(f"Fireworks API error: {e}")
+                reply_content = "Sorry, I encountered an error trying to communicate with the AI model."
+                # Optionally, you could return a 500 error here if the AI call is critical
+                # return jsonify({'error': 'AI service unavailable'}), 503
+        else:
+            reply_content = f"(AI response placeholder) You said: {message}"
+        
+        conversation.append({'role': 'assistant', 'content': reply_content})
+
+        if db and profile_ref:
+            profile_ref.update({'history': conversation})
+        # elif email in in_memory_db['discipline_profiles']: # Removed in-memory_db reference
+            # in_memory_db['discipline_profiles'][email]['history'] = conversation # Removed in-memory_db reference
+        # else: # Removed in-memory_db reference
+            # app.logger.error(f"Profile for {email} disappeared before history update (in-memory).") # Removed in-memory_db reference
+
+        return jsonify({'reply': reply_content})
+
+    except Exception as e:
+        app.logger.error(f"Unhandled exception in /chat: {e}", exc_info=True)
+        return jsonify({'error': 'An unexpected server error occurred.'}), 500
 
 # Utility to build system prompt from disciplinarian config
 def generate_system_prompt(config):

@@ -1,4 +1,10 @@
-<h2>Chat</h2>
-<textarea id="chat-box" rows="10" cols="80" readonly></textarea><br>
-<input type="text" id="user-input">
-<button onclick="sendMessage()">Send</button>
+<div class="chat-container"> <!-- Use a class for styling consistency -->
+    <h2>Chat</h2>
+    <div id="chat-box">
+        <!-- Messages will be dynamically added here by JavaScript -->
+    </div>
+    <div class="message-input-area">
+        <textarea id="message-input" placeholder="Type your message..." rows="1"></textarea>
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>

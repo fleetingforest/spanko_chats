@@ -7,25 +7,76 @@
     <script>
         function showSection(id) {
             document.querySelectorAll('.section').forEach(sec => sec.style.display = 'none');
-            document.getElementById(id).style.display = 'block';
+            const sectionToShow = document.getElementById(id);
+            if (sectionToShow) {
+                sectionToShow.style.display = 'block';
+            }
+            if(id === 'chat') loadChatMessages();
             if(id === 'history') loadHistory();
             if(id === 'rules') loadRules();
             if(id === 'punishments') loadPunishments();
             if(id === 'todo') loadTodos();
         }
 
+        async function loadChatMessages() {
+            const chatBox = document.getElementById('chat-box');
+            if (!chatBox) return;
+            chatBox.innerHTML = ''; // Clear existing messages
+
+            try {
+                const res = await fetch('/data/history');
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    console.error('Failed to load chat history:', res.status, errorText);
+                    const errorDiv = document.createElement('div');
+                    errorDiv.classList.add('ai-message'); 
+                    errorDiv.textContent = 'Error loading chat history.';
+                    chatBox.appendChild(errorDiv);
+                    return;
+                }
+                const history = await res.json();
+                history.forEach(msg => {
+                    if (msg.role === 'user' || msg.role === 'assistant') {
+                        const messageDiv = document.createElement('div');
+                        if (msg.role === 'user') {
+                            messageDiv.classList.add('user-message');
+                            messageDiv.textContent = 'You: ' + msg.content;
+                        } else { // assistant
+                            messageDiv.classList.add('ai-message');
+                            // Consider using the disciplinarian's actual name if available
+                            messageDiv.textContent = 'AI: ' + msg.content; 
+                        }
+                        chatBox.appendChild(messageDiv);
+                    }
+                });
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } catch (error) {
+                console.error('Error processing chat history:', error);
+                const errorDiv = document.createElement('div');
+                errorDiv.classList.add('ai-message');
+                errorDiv.textContent = 'Error displaying chat history.';
+                chatBox.appendChild(errorDiv);
+            }
+        }
+
         async function sendMessage() {
-            const userInput = document.getElementById('user-input');
-            const message = userInput.value.trim();
+            const messageInput = document.getElementById('message-input');
+            if (!messageInput) return;
+            const message = messageInput.value.trim();
             if (!message) return;
 
             const chatBox = document.getElementById('chat-box');
-            // Display user's message immediately
-            chatBox.value += '\nYou: ' + message;
-            // Scroll to bottom after adding user message
-            chatBox.scrollTop = chatBox.scrollHeight; 
+            if (!chatBox) return;
+
+            // Display user's message
+            const userMessageDiv = document.createElement('div');
+            userMessageDiv.classList.add('user-message');
+            userMessageDiv.textContent = 'You: ' + message;
+            chatBox.appendChild(userMessageDiv);
             
-            userInput.value = ''; // Clear input field immediately
+            messageInput.value = ''; // Clear input field
+            resetTextareaHeight(); // Reset textarea height
+            chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
 
             try {
                 const res = await fetch('/chat', {
@@ -35,6 +86,8 @@
                 });
 
                 let aiResponseText = '';
+                const aiMessageDiv = document.createElement('div');
+                aiMessageDiv.classList.add('ai-message');
 
                 if (!res.ok) {
                     let errorMsg = `Error: ${res.status} ${res.statusText}`;
@@ -46,8 +99,6 @@
                             errorMsg = `Server note: ${errorData.reply}`;
                         }
                     } catch (e) {
-                        // Failed to parse error response as JSON, stick with status text
-                        // Or the response was not JSON at all (e.g. HTML error page)
                         const rawErrorText = await res.text(); // Attempt to get raw text
                         errorMsg = `Error: ${res.status} ${res.statusText}. Response: ${rawErrorText.substring(0,100)}`;
                     }
@@ -62,54 +113,141 @@
                         console.error('Chat API response error: data or data.reply is missing', data);
                     }
                 }
-                chatBox.value += '\nAI: ' + aiResponseText;
+                aiMessageDiv.textContent = 'AI: ' + aiResponseText; // Consider using actual disciplinarian name
+                chatBox.appendChild(aiMessageDiv);
 
             } catch (error) {
-                chatBox.value += '\nAI: Failed to send message. Network error or server issue.';
+                const aiMessageDiv = document.createElement('div');
+                aiMessageDiv.classList.add('ai-message'); 
+                aiMessageDiv.textContent = 'AI: Failed to send message. Network error or server issue.';
+                chatBox.appendChild(aiMessageDiv);
                 console.error('Failed to send message:', error);
             }
-            // Scroll to bottom after AI response or error
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
         async function loadHistory(){
+            const historyList = document.getElementById('history-list');
+            if (!historyList) return;
             const res = await fetch('/data/history');
             const history = await res.json();
-            const list = document.getElementById('history-list');
-            list.innerHTML = '';
-            history.forEach(h => { if(h.role==='user'||h.role==='assistant'){ const li = document.createElement('li'); li.textContent = h.role+': '+h.content; list.appendChild(li);} });
+            historyList.innerHTML = '';
+            history.forEach(h => { 
+                if(h.role==='user'||h.role==='assistant'){ 
+                    const li = document.createElement('li'); 
+                    li.textContent = h.role.charAt(0).toUpperCase() + h.role.slice(1) + ': ' + h.content; 
+                    historyList.appendChild(li);
+                } 
+            });
         }
         async function loadRules(){
+            const rulesList = document.getElementById('rules-list');
+            if (!rulesList) return;
             const res = await fetch('/data/rules');
             const rules = await res.json();
-            const list = document.getElementById('rules-list');
-            list.innerHTML = '';
-            rules.forEach(r => { const li = document.createElement('li'); li.textContent = r; list.appendChild(li); });
+            rulesList.innerHTML = '';
+            rules.forEach(r => { const li = document.createElement('li'); li.textContent = r; rulesList.appendChild(li); });
         }
+        async function addRule() {
+            const ruleInput = document.getElementById('new-rule-input');
+            if (!ruleInput || !ruleInput.value.trim()) return;
+            await fetch('/data/rules', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({rule: ruleInput.value.trim()})
+            });
+            ruleInput.value = '';
+            loadRules();
+        }
+
         async function loadPunishments(){
+            const punishmentsList = document.getElementById('punishments-list');
+            if (!punishmentsList) return;
             const res = await fetch('/data/punishments');
             const items = await res.json();
-            const list = document.getElementById('punishments-list');
-            list.innerHTML = '';
-            items.forEach(p => { const li = document.createElement('li'); li.textContent = p.text + (p.completed ? ' (done)' : ''); list.appendChild(li); });
+            punishmentsList.innerHTML = '';
+            items.forEach(p => { const li = document.createElement('li'); li.textContent = p.text + (p.completed ? ' (done)' : ''); punishmentsList.appendChild(li); });
         }
+         async function addPunishment() {
+            const punishmentInput = document.getElementById('new-punishment-input');
+            if (!punishmentInput || !punishmentInput.value.trim()) return;
+            await fetch('/data/punishments', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({punishment: punishmentInput.value.trim()})
+            });
+            punishmentInput.value = '';
+            loadPunishments();
+        }
+
         async function loadTodos(){
+            const todoList = document.getElementById('todo-list');
+            if (!todoList) return;
             const res = await fetch('/data/todos');
             const items = await res.json();
-            const list = document.getElementById('todo-list');
-            list.innerHTML = '';
-            items.forEach(t => { const li = document.createElement('li'); li.textContent = t.text + (t.completed ? ' (done)' : ''); list.appendChild(li); });
+            todoList.innerHTML = '';
+            items.forEach(t => { const li = document.createElement('li'); li.textContent = t.text + (t.completed ? ' (done)' : ''); todoList.appendChild(li); });
         }
+        async function addTodo() {
+            const todoInput = document.getElementById('new-todo-input');
+            if (!todoInput || !todoInput.value.trim()) return;
+            await fetch('/data/todos', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({item: todoInput.value.trim()})
+            });
+            todoInput.value = '';
+            loadTodos();
+        }
+
+        function resetTextareaHeight() {
+            const textarea = document.getElementById('message-input');
+            if (textarea) {
+                textarea.style.height = 'auto'; // Reset height
+                textarea.style.height = (textarea.scrollHeight) + 'px'; // Set to scroll height
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add class to body for specific dashboard styling if needed
+            // document.body.classList.add('disciplinarian-dashboard-body');
+
+            const messageInput = document.getElementById('message-input');
+            if (messageInput) {
+                messageInput.addEventListener('input', resetTextareaHeight);
+                 // Initial resize in case there's pre-filled text (unlikely here)
+                resetTextareaHeight();
+            }
+            
+            // Show the chat section by default and load its messages
+            // The HTML already has the chat section visible by default.
+            // We just need to load its content.
+            loadChatMessages();
+
+            // Add event listener for Enter key in message input
+            if (messageInput) {
+                messageInput.addEventListener('keypress', function(event) {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault(); // Prevent new line
+                        sendMessage();
+                    }
+                });
+            }
+        });
     </script>
 </head>
 <body>
-    <h1>Welcome, {{ session.user_name }}</h1>
+    <h1>Welcome, {{ session.get('user_name', 'User') }}</h1>
     <nav>
         <button onclick="showSection('chat')">Chat</button>
         <button onclick="showSection('history')">History</button>
         <button onclick="showSection('rules')">Rules</button>
         <button onclick="showSection('punishments')">Punishments</button>
         <button onclick="showSection('todo')">To-Do</button>
+        <!-- Add a logout link/button if desired -->
+        <a href="{{ url_for('logout') if 'user_email' in session else url_for('login') }}" style="margin-left: auto; padding: 10px 15px; color: white; background-color: var(--secondary-color); border-radius: 20px; text-decoration: none;">
+            {{ 'Logout' if 'user_email' in session else 'Login' }}
+        </a>
     </nav>
     <div id="chat" class="section">
         {% include 'chat_section.html' %}
