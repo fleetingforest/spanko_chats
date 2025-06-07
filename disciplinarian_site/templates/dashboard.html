@@ -146,7 +146,18 @@
             const res = await fetch('data/rules');
             const rules = await res.json();
             rulesList.innerHTML = '';
-            rules.forEach(r => { const li = document.createElement('li'); li.textContent = r; rulesList.appendChild(li); });
+            rules.forEach(r => { 
+                const li = document.createElement('li'); 
+                li.textContent = r; 
+                
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.style.marginLeft = '10px';
+                deleteButton.onclick = () => deleteRule(r);
+                li.appendChild(deleteButton);
+                
+                rulesList.appendChild(li); 
+            });
         }
         async function addRule() {
             const ruleInput = document.getElementById('new-rule-input');
@@ -160,13 +171,45 @@
             loadRules();
         }
 
+        async function deleteRule(ruleText) {
+            if (confirm(`Are you sure you want to delete this rule: "${ruleText}"?`)) {
+                try {
+                    const res = await fetch('data/rules/delete', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({rule: ruleText})
+                    });
+                    if (res.ok) {
+                        loadRules();
+                    } else {
+                        const errorData = await res.json();
+                        alert(`Error deleting rule: ${errorData.error || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    console.error('Failed to delete rule:', error);
+                    alert('Failed to delete rule. Check console for details.');
+                }
+            }
+        }
+
         async function loadPunishments(){
             const punishmentsList = document.getElementById('punishments-list');
             if (!punishmentsList) return;
             const res = await fetch('data/punishments');
             const items = await res.json();
             punishmentsList.innerHTML = '';
-            items.forEach(p => { const li = document.createElement('li'); li.textContent = p.text + (p.completed ? ' (done)' : ''); punishmentsList.appendChild(li); });
+            items.forEach(p => { 
+                const li = document.createElement('li'); 
+                li.textContent = p.text + (p.completed ? ' (done)' : ''); 
+                
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.style.marginLeft = '10px';
+                deleteButton.onclick = () => deletePunishment(p.text);
+                li.appendChild(deleteButton);
+
+                punishmentsList.appendChild(li); 
+            });
         }
          async function addPunishment() {
             const punishmentInput = document.getElementById('new-punishment-input');
@@ -180,13 +223,45 @@
             loadPunishments();
         }
 
+        async function deletePunishment(punishmentText) {
+            if (confirm(`Are you sure you want to delete this punishment: "${punishmentText}"?`)) {
+                try {
+                    const res = await fetch('data/punishments/delete', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({punishment_text: punishmentText})
+                    });
+                    if (res.ok) {
+                        loadPunishments();
+                    } else {
+                        const errorData = await res.json();
+                        alert(`Error deleting punishment: ${errorData.error || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    console.error('Failed to delete punishment:', error);
+                    alert('Failed to delete punishment. Check console for details.');
+                }
+            }
+        }
+
         async function loadTodos(){
             const todoList = document.getElementById('todo-list');
             if (!todoList) return;
             const res = await fetch('data/todos');
             const items = await res.json();
             todoList.innerHTML = '';
-            items.forEach(t => { const li = document.createElement('li'); li.textContent = t.text + (t.completed ? ' (done)' : ''); todoList.appendChild(li); });
+            items.forEach(t => { 
+                const li = document.createElement('li'); 
+                li.textContent = t.text + (t.completed ? ' (done)' : ''); 
+                
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.style.marginLeft = '10px';
+                deleteButton.onclick = () => deleteTodo(t.text);
+                li.appendChild(deleteButton);
+
+                todoList.appendChild(li); 
+            });
         }
         async function addTodo() {
             const todoInput = document.getElementById('new-todo-input');
@@ -198,6 +273,27 @@
             });
             todoInput.value = '';
             loadTodos();
+        }
+
+        async function deleteTodo(todoText) {
+            if (confirm(`Are you sure you want to delete this to-do item: "${todoText}"?`)) {
+                try {
+                    const res = await fetch('data/todos/delete', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({todo_text: todoText})
+                    });
+                    if (res.ok) {
+                        loadTodos();
+                    } else {
+                        const errorData = await res.json();
+                        alert(`Error deleting to-do item: ${errorData.error || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    console.error('Failed to delete to-do item:', error);
+                    alert('Failed to delete to-do item. Check console for details.');
+                }
+            }
         }
 
         function resetTextareaHeight() {

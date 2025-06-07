@@ -178,6 +178,24 @@ def add_rule():
     _update_profile(session['user_email'], {'rules': rules})
     return jsonify({'status': 'ok'})
 
+@app.route('/data/rules/delete', methods=['POST'])
+def delete_rule():
+    if 'user_email' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    rule_to_delete = request.json.get('rule')
+    if not rule_to_delete:
+        return jsonify({'error': 'No rule provided for deletion'}), 400
+    
+    profile = _get_profile(session['user_email'])
+    rules = profile.get('rules', [])
+    
+    if rule_to_delete in rules:
+        rules.remove(rule_to_delete)
+        _update_profile(session['user_email'], {'rules': rules})
+        return jsonify({'status': 'ok'})
+    else:
+        return jsonify({'error': 'Rule not found'}), 404
+
 @app.route('/data/punishments')
 def get_punishments():
     if 'user_email' not in session:
@@ -198,6 +216,27 @@ def add_punishment():
     _update_profile(session['user_email'], {'punishments': punishments})
     return jsonify({'status': 'ok'})
 
+@app.route('/data/punishments/delete', methods=['POST'])
+def delete_punishment():
+    if 'user_email' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    punishment_text_to_delete = request.json.get('punishment_text')
+    if not punishment_text_to_delete:
+        return jsonify({'error': 'No punishment text provided for deletion'}), 400
+
+    profile = _get_profile(session['user_email'])
+    punishments = profile.get('punishments', [])
+    
+    # Punishments are stored as dicts, e.g., {'text': 'some punishment', 'completed': False}
+    original_length = len(punishments)
+    punishments = [p for p in punishments if p.get('text') != punishment_text_to_delete]
+
+    if len(punishments) < original_length:
+        _update_profile(session['user_email'], {'punishments': punishments})
+        return jsonify({'status': 'ok'})
+    else:
+        return jsonify({'error': 'Punishment not found'}), 404
+
 @app.route('/data/todos')
 def get_todos():
     if 'user_email' not in session:
@@ -217,6 +256,27 @@ def add_todo():
     todos.append({'text': item, 'completed': False})
     _update_profile(session['user_email'], {'todos': todos})
     return jsonify({'status': 'ok'})
+
+@app.route('/data/todos/delete', methods=['POST'])
+def delete_todo():
+    if 'user_email' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    todo_text_to_delete = request.json.get('todo_text')
+    if not todo_text_to_delete:
+        return jsonify({'error': 'No to-do text provided for deletion'}), 400
+
+    profile = _get_profile(session['user_email'])
+    todos = profile.get('todos', [])
+
+    # Todos are stored as dicts, e.g., {'text': 'some todo', 'completed': False}
+    original_length = len(todos)
+    todos = [t for t in todos if t.get('text') != todo_text_to_delete]
+
+    if len(todos) < original_length:
+        _update_profile(session['user_email'], {'todos': todos})
+        return jsonify({'status': 'ok'})
+    else:
+        return jsonify({'error': 'To-do item not found'}), 404
 
 # Chat endpoint using Fireworks DeepSeek model
 @app.route('/chat', methods=['POST'])
