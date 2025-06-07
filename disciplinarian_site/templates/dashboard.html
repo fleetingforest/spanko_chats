@@ -24,7 +24,7 @@
             chatBox.innerHTML = ''; // Clear existing messages
 
             try {
-                const res = await fetch('/data/history');
+                const res = await fetch('data/history');
                 if (!res.ok) {
                     const errorText = await res.text();
                     console.error('Failed to load chat history:', res.status, errorText);
@@ -79,7 +79,7 @@
             chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
 
             try {
-                const res = await fetch('/chat', {
+                const res = await fetch('chat', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({message})
@@ -129,7 +129,7 @@
         async function loadHistory(){
             const historyList = document.getElementById('history-list');
             if (!historyList) return;
-            const res = await fetch('/data/history');
+            const res = await fetch('data/history');
             const history = await res.json();
             historyList.innerHTML = '';
             history.forEach(h => { 
@@ -143,7 +143,7 @@
         async function loadRules(){
             const rulesList = document.getElementById('rules-list');
             if (!rulesList) return;
-            const res = await fetch('/data/rules');
+            const res = await fetch('data/rules');
             const rules = await res.json();
             rulesList.innerHTML = '';
             rules.forEach(r => { const li = document.createElement('li'); li.textContent = r; rulesList.appendChild(li); });
@@ -151,7 +151,7 @@
         async function addRule() {
             const ruleInput = document.getElementById('new-rule-input');
             if (!ruleInput || !ruleInput.value.trim()) return;
-            await fetch('/data/rules', {
+            await fetch('data/rules', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({rule: ruleInput.value.trim()})
@@ -163,7 +163,7 @@
         async function loadPunishments(){
             const punishmentsList = document.getElementById('punishments-list');
             if (!punishmentsList) return;
-            const res = await fetch('/data/punishments');
+            const res = await fetch('data/punishments');
             const items = await res.json();
             punishmentsList.innerHTML = '';
             items.forEach(p => { const li = document.createElement('li'); li.textContent = p.text + (p.completed ? ' (done)' : ''); punishmentsList.appendChild(li); });
@@ -171,7 +171,7 @@
          async function addPunishment() {
             const punishmentInput = document.getElementById('new-punishment-input');
             if (!punishmentInput || !punishmentInput.value.trim()) return;
-            await fetch('/data/punishments', {
+            await fetch('data/punishments', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({punishment: punishmentInput.value.trim()})
@@ -183,7 +183,7 @@
         async function loadTodos(){
             const todoList = document.getElementById('todo-list');
             if (!todoList) return;
-            const res = await fetch('/data/todos');
+            const res = await fetch('data/todos');
             const items = await res.json();
             todoList.innerHTML = '';
             items.forEach(t => { const li = document.createElement('li'); li.textContent = t.text + (t.completed ? ' (done)' : ''); todoList.appendChild(li); });
@@ -191,7 +191,7 @@
         async function addTodo() {
             const todoInput = document.getElementById('new-todo-input');
             if (!todoInput || !todoInput.value.trim()) return;
-            await fetch('/data/todos', {
+            await fetch('data/todos', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({item: todoInput.value.trim()})
