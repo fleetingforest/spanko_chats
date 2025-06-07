@@ -251,6 +251,8 @@ def chat():
             return jsonify({'error': 'User profile not found'}), 500
 
         conversation = profile.get('history', [])
+        user_name = profile.get('user_name', 'the user') # Get user_name from profile
+        user_gender = profile.get('user_gender', 'unknown gender') # Get user_gender from profile
 
         disciplinarian_config = profile.get('disciplinarian')
         if not isinstance(disciplinarian_config, dict):
@@ -263,7 +265,7 @@ def chat():
                 'punishments': []
             }
 
-        system_prompt = generate_system_prompt(disciplinarian_config)
+        system_prompt = generate_system_prompt(disciplinarian_config, user_name, user_gender)
         
         if not conversation:
             conversation.append({'role': 'system', 'content': system_prompt})
@@ -307,7 +309,7 @@ def chat():
         return jsonify({'error': 'An unexpected server error occurred.'}), 500
 
 # Utility to build system prompt from disciplinarian config
-def generate_system_prompt(config):
+def generate_system_prompt(config, user_name, user_gender):
     if not isinstance(config, dict):
         config = {} # Ensure config is a dictionary
 
@@ -327,6 +329,7 @@ def generate_system_prompt(config):
         f"You are {name}, a {age}-year-old {gender} disciplinarian. "
         f"Your personality is {personality} and your strictness level is {strictness}. "
         f"You believe in punishments such as: {punishments_str}. "
+        f"You are interacting with {user_name}, who is {user_gender}. "
         "Your goal is to discipline and support the user with firm but caring guidance. "
         "If the user breaks established rules you must assign an appropriate punishment from the list of available punishments."
     )
