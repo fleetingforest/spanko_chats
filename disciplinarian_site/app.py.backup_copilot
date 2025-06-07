@@ -12,8 +12,9 @@ import json # Add json if not already imported
 from flask import stream_with_context # Add stream_with_context
 import sys # For sys.stdout.flush()
 import time # Added for token rate limiting
-from werkzeug.utils import secure_filename # For securing filenames
-import uuid # ensure uuid is imported, it is used for chat IDs and now for unique filenames
+from werkzeug.utils import secure_filename
+import PyPDF2
+import docx
 
 app = Flask(__name__)
 app.secret_key = os.getenv("DISCIPLINE_SECRET", "discipline-secret-key")
@@ -36,11 +37,6 @@ DEEPINFRA_API_KEY = os.environ.get("DEEPINFRA_API_KEY")
 # Using a common Deepseek model as a placeholder.
 DEEPINFRA_MODEL_NAME = os.environ.get("DEEPINFRA_MODEL_NAME", "deepseek-ai/DeepSeek-R1-Turbo")
 
-ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'md', 'py', 'js', 'html', 'css', 'json', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'log'}
-
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Initialize Firebase
 # Use the same credentials file as the main app, assuming execution from project root
@@ -106,92 +102,6 @@ def format_ai_response_text(text):
     text = re.sub(r'(?<!\*)\*([^*\n]{1,100}?)\*(?!\*)', format_italic, text)
     
     return text
-
-# Helper function to get file content (simplified: assumes text for now)
-def _get_file_content_from_storage(storage_path):
-    MAX_FILE_CONTENT_LENGTH = 50000  # Limit to ~50KB for now
-    try:
-        blob = bucket.blob(storage_path)
-        if not blob.exists():
-            print(f"Error: File not found in storage at path: {storage_path}")
-            return None
-        
-        file_content_bytes = blob.download_as_bytes()
-        
-        # Attempt to decode as UTF-8, with fallback for common encodings if necessary
-        try:
-            file_content = file_content_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            try:
-                file_content = file_content_bytes.decode('latin-1') # Try latin-1 as a common fallback
-            except UnicodeDecodeError:
-                print(f"Warning: Could not decode file {storage_path} as UTF-8 or Latin-1. Treating as binary/non-text.")
-                return "[Content not displayable: file is binary or uses an unsupported encoding]"
-
-        if len(file_content) > MAX_FILE_CONTENT_LENGTH:
-            file_content = file_content[:MAX_FILE_CONTENT_LENGTH] + "\\n[...content truncated...]"
-        return file_content
-    except Exception as e:
-        print(f"Error downloading or processing file from storage {storage_path}: {e}")
-        return None
-
-# Helper function to prepare messages for AI, including file content
-def _prepare_messages_for_ai(system_prompt, conversation_messages, current_user_message_file_info=None):
-    processed_messages = []
-    if system_prompt:
-        processed_messages.append({"role": "system", "content": system_prompt})
-
-    # Process historical messages
-    for i, msg in enumerate(conversation_messages):
-        current_msg_for_ai = {"role": msg["role"], "content": msg["content"]}
-        
-        # Handle file_info in historical messages (if any were attached previously)
-        if msg.get("file_info") and msg["file_info"].get("storage_path"):
-            file_info = msg["file_info"]
-            file_name = file_info.get("name", "attached_file")
-            file_type = file_info.get("type", "").lower()
-            is_text_based = file_type.startswith("text/") or any(file_name.lower().endswith(ext) for ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.log'])
-
-            if is_text_based:
-                retrieved_content = _get_file_content_from_storage(file_info["storage_path"])
-                if retrieved_content:
-                    current_msg_for_ai["content"] = f"User uploaded file: {file_name}\\nContent:\\n{retrieved_content}\\n\\nUser's message: {msg['content']}"
-                else:
-                    current_msg_for_ai["content"] = f"User uploaded file: {file_name} (content not available or error loading).\\n\\nUser's message: {msg['content']}"
-            else:
-                current_msg_for_ai["content"] = f"User uploaded file: {file_name} (type: {file_type}, non-text content not displayed).\\n\\nUser's message: {msg['content']}"
-        
-        processed_messages.append(current_msg_for_ai)
-
-    # Process the current user message, potentially with a newly uploaded file
-    # This part is tricky because conversation_messages ALREADY contains the latest user message
-    # from activeChat.messages. We need to ensure we're augmenting the *correct* one.
-    # The `current_user_message_file_info` is passed if the *very last* message being sent NOW has a file.
-
-    if current_user_message_file_info and processed_messages and processed_messages[-1]["role"] == "user":
-        # This assumes the last message in processed_messages is the one we want to augment
-        last_user_msg_content = processed_messages[-1]["content"] # Original text part
-        
-        file_info = current_user_message_file_info
-        file_name = file_info.get("name", "attached_file")
-        file_type = file_info.get("type", "").lower()
-        is_text_based = file_type.startswith("text/") or any(file_name.lower().endswith(ext) for ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.log'])
-
-        augmented_content = f"User's message: {last_user_msg_content}" # Default if no file content
-
-        if is_text_based:
-            retrieved_content = _get_file_content_from_storage(file_info["storage_path"])
-            if retrieved_content:
-                augmented_content = f"User uploaded file: {file_name}\\nContent:\\n{retrieved_content}\\n\\nUser's message: {last_user_msg_content}"
-            else:
-                augmented_content = f"User uploaded file: {file_name} (content not available or error loading).\\n\\nUser's message: {last_user_msg_content}"
-        else:
-            augmented_content = f"User uploaded file: {file_name} (type: {file_type}, non-text content not displayed).\\n\\nUser's message: {last_user_msg_content}"
-        
-        processed_messages[-1]["content"] = augmented_content
-        print(f"Augmented current user message with file: {file_name}")
-
-    return processed_messages
 
 def register_user(email, password):
     """Register a new user in Firestore using the 'users' collection."""
@@ -326,76 +236,6 @@ def signup():
             return redirect(url_for('dashboard'))
         flash(message)
     return render_template('signup.html')
-
-@app.route('/upload_file_to_chat', methods=['POST'])
-def upload_file_to_chat():
-    if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized. Please log in again.'}), 401
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part in the request.'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected for upload.'}), 400
-
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        user_email = session.get('user_email', 'unknown_user')
-        chat_id = session.get('active_chat_id', 'unknown_chat') # Ensure active_chat_id is in session
-
-        if chat_id == 'unknown_chat':
-            # Fallback or error if chat_id is not set,
-            # or create a temporary chat_id if that's part of the design for new chats.
-            # For now, let's assume active_chat_id should be present.
-            # If not, a new chat should be initiated first, or this endpoint needs a chat_id.
-            # A simple solution for now if chat_id is missing, is to generate one,
-            # but this might lead to orphaned files if the chat isn't saved.
-            # A better approach is to ensure chat_id is always available.
-            # For this iteration, let's make it a requirement or use a default.
-            # For robustness, let's use a temporary ID if none is found, but log a warning.
-            chat_id = session.get('active_chat_id')
-            if not chat_id:
-                # This case should ideally be handled by ensuring a chat session is active.
-                # If a file is uploaded before a chat is formally started,
-                # it might be associated with a temporary ID or a default "pre-chat" bucket.
-                # For now, let's use a generic placeholder if no chat_id exists.
-                # This implies the file is uploaded before the first message that creates the chat.
-                # This might require adjustment based on when active_chat_id is set.
-                # A robust solution would be to pass chat_id from client if it exists,
-                # or have client ensure chat is initiated.
-                # For now, let's assume active_chat_id is usually set.
-                # If not, this is a potential issue.
-                # Let's default to a temporary chat_id if not found, but this is not ideal.
-                chat_id = f"temp_chat_for_{user_email.split('@')[0]}"
-                print(f"Warning: active_chat_id not found in session for file upload. Using temporary: {chat_id}")
-
-
-        unique_id = uuid.uuid4().hex
-        storage_filename = f"{unique_id}_{filename}"
-        storage_path = f"user_uploads/{user_email}/{chat_id}/{storage_filename}"
-
-        try:
-            blob = bucket.blob(storage_path)
-            blob.upload_from_file(file.stream, content_type=file.content_type)
-            file_size = file.tell() # Get file size after stream has been read by upload_from_file
-
-            file_info = {
-                'name': filename,
-                'storage_path': storage_path,
-                'type': file.content_type,
-                'size': file_size # file.content_length might be -1 if client doesn't send it
-            }
-            
-            # DO NOT add to chat history here. Return file_info to client.
-            # The client will send this file_info with the next message.
-            print(f"File {filename} uploaded to {storage_path}. Info: {file_info}")
-            return jsonify({'message': 'File uploaded successfully, awaiting message.', 'file_info': file_info}), 200
-
-        except Exception as e:
-            print(f"Error uploading file to Firebase Storage: {e}")
-            return jsonify({'error': f'Failed to upload file to storage: {str(e)}'}), 500
-    else:
-        return jsonify({'error': 'File type not allowed'}), 400
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -763,6 +603,9 @@ def chat():
                 'messages': [],
                 'created_at': datetime.now(timezone.utc).isoformat()
             }
+            user_history.insert(0, active_conversation_obj)
+            session['active_chat_id'] = new_chat_id
+            app.logger.info(f"Created new chat {new_chat_id} for user {email} in /chat endpoint")
 
     # Make a mutable copy of messages from the definitive active_conversation_obj
     # This list will be built up and then assigned back.
@@ -805,7 +648,7 @@ def chat():
     system_prompt = generate_system_prompt(disciplinarian_config, user_name, user_gender, profile)
     
     # messages_for_ai should use the messages from active_conversation_obj, which now includes the user's new message
-    messages_for_ai = _prepare_messages_for_ai(system_prompt, active_conversation_obj.get('messages', []))
+    messages_for_ai = [{'role': 'system', 'content': system_prompt}] + active_conversation_obj['messages']
 
     def generate_stream():
         nonlocal active_conversation_obj # Ensure we're modifying the one from the outer scope
@@ -863,7 +706,6 @@ def chat():
         except Exception as e:
             app.logger.error(f"Error during AI stream for chat {active_chat_id}: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-            # AI message was not added, but user message is already in active_conversation_obj['messages']
         finally:
             # Save the state of active_conversation_obj['messages']
             # This will include user message, and AI message if successful.
@@ -966,7 +808,7 @@ def chat_stream_message():
     user_gender = profile.get('user_gender', 'unknown gender')
     disciplinarian_config = profile.get('disciplinarian', {})
     system_prompt = generate_system_prompt(disciplinarian_config, user_name, user_gender, profile)
-    messages_for_ai = _prepare_messages_for_ai(system_prompt, active_conversation_obj.get('messages', []))
+    messages_for_ai = [{'role': 'system', 'content': system_prompt}] + active_conversation_obj['messages']
 
     def generate_get_stream():
         nonlocal active_conversation_obj, conversation_name_updated

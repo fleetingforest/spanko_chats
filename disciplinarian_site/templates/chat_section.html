@@ -8,6 +8,9 @@
     </div>
     <div class="message-input-area">
         <textarea id="message-input" placeholder="Type your message..." rows="1"></textarea>
+        <input type="file" id="file-upload-input" style="display: none;" onchange="handleFileSelected()">
+        <button id="file-upload-button" onclick="document.getElementById('file-upload-input').click()" title="Attach File">📎</button>
+        <span id="selected-filename" style="font-size: 0.8em; margin-left: 5px; display: none;"></span>
         <button onclick="sendMessage()">Send</button>
     </div>
 </div>

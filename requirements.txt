@@ -16,3 +16,5 @@ sounddevice
 python-dotenv
 matplotlib
 pandas
+PyPDF2 
+python-docx

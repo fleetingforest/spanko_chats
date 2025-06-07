@@ -1,22 +1,31 @@
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, stream_with_context, Response
 import firebase_admin
+import uuid
+import re
+import requests
+import json
+import sys
+import time
+import mimetypes
+import PyPDF2
+import docx
+from io import BytesIO
 from firebase_admin import credentials, firestore, auth, storage
 from openai import OpenAI as FireworksOpenAI # Renamed to avoid conflict if another OpenAI client is used
 import os
 from datetime import datetime, timezone
-import uuid # For generating unique chat IDs
 from passlib.hash import pbkdf2_sha256
-import re # Added import for regular expressions
-import requests # For DeepInfra API call
-import json # Add json if not already imported
-from flask import stream_with_context # Add stream_with_context
-import sys # For sys.stdout.flush()
-import time # Added for token rate limiting
-from werkzeug.utils import secure_filename # For securing filenames
-import uuid # ensure uuid is imported, it is used for chat IDs and now for unique filenames
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.getenv("DISCIPLINE_SECRET", "discipline-secret-key")
+
+# File upload configuration
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'doc', 'docx', 'md', 'rtf'}
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
 
 # Initialize Fireworks AI Client
@@ -36,11 +45,6 @@ DEEPINFRA_API_KEY = os.environ.get("DEEPINFRA_API_KEY")
 # Using a common Deepseek model as a placeholder.
 DEEPINFRA_MODEL_NAME = os.environ.get("DEEPINFRA_MODEL_NAME", "deepseek-ai/DeepSeek-R1-Turbo")
 
-ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'md', 'py', 'js', 'html', 'css', 'json', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'log'}
-
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Initialize Firebase
 # Use the same credentials file as the main app, assuming execution from project root
@@ -106,92 +110,6 @@ def format_ai_response_text(text):
     text = re.sub(r'(?<!\*)\*([^*\n]{1,100}?)\*(?!\*)', format_italic, text)
     
     return text
-
-# Helper function to get file content (simplified: assumes text for now)
-def _get_file_content_from_storage(storage_path):
-    MAX_FILE_CONTENT_LENGTH = 50000  # Limit to ~50KB for now
-    try:
-        blob = bucket.blob(storage_path)
-        if not blob.exists():
-            print(f"Error: File not found in storage at path: {storage_path}")
-            return None
-        
-        file_content_bytes = blob.download_as_bytes()
-        
-        # Attempt to decode as UTF-8, with fallback for common encodings if necessary
-        try:
-            file_content = file_content_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            try:
-                file_content = file_content_bytes.decode('latin-1') # Try latin-1 as a common fallback
-            except UnicodeDecodeError:
-                print(f"Warning: Could not decode file {storage_path} as UTF-8 or Latin-1. Treating as binary/non-text.")
-                return "[Content not displayable: file is binary or uses an unsupported encoding]"
-
-        if len(file_content) > MAX_FILE_CONTENT_LENGTH:
-            file_content = file_content[:MAX_FILE_CONTENT_LENGTH] + "\\n[...content truncated...]"
-        return file_content
-    except Exception as e:
-        print(f"Error downloading or processing file from storage {storage_path}: {e}")
-        return None
-
-# Helper function to prepare messages for AI, including file content
-def _prepare_messages_for_ai(system_prompt, conversation_messages, current_user_message_file_info=None):
-    processed_messages = []
-    if system_prompt:
-        processed_messages.append({"role": "system", "content": system_prompt})
-
-    # Process historical messages
-    for i, msg in enumerate(conversation_messages):
-        current_msg_for_ai = {"role": msg["role"], "content": msg["content"]}
-        
-        # Handle file_info in historical messages (if any were attached previously)
-        if msg.get("file_info") and msg["file_info"].get("storage_path"):
-            file_info = msg["file_info"]
-            file_name = file_info.get("name", "attached_file")
-            file_type = file_info.get("type", "").lower()
-            is_text_based = file_type.startswith("text/") or any(file_name.lower().endswith(ext) for ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.log'])
-
-            if is_text_based:
-                retrieved_content = _get_file_content_from_storage(file_info["storage_path"])
-                if retrieved_content:
-                    current_msg_for_ai["content"] = f"User uploaded file: {file_name}\\nContent:\\n{retrieved_content}\\n\\nUser's message: {msg['content']}"
-                else:
-                    current_msg_for_ai["content"] = f"User uploaded file: {file_name} (content not available or error loading).\\n\\nUser's message: {msg['content']}"
-            else:
-                current_msg_for_ai["content"] = f"User uploaded file: {file_name} (type: {file_type}, non-text content not displayed).\\n\\nUser's message: {msg['content']}"
-        
-        processed_messages.append(current_msg_for_ai)
-
-    # Process the current user message, potentially with a newly uploaded file
-    # This part is tricky because conversation_messages ALREADY contains the latest user message
-    # from activeChat.messages. We need to ensure we're augmenting the *correct* one.
-    # The `current_user_message_file_info` is passed if the *very last* message being sent NOW has a file.
-
-    if current_user_message_file_info and processed_messages and processed_messages[-1]["role"] == "user":
-        # This assumes the last message in processed_messages is the one we want to augment
-        last_user_msg_content = processed_messages[-1]["content"] # Original text part
-        
-        file_info = current_user_message_file_info
-        file_name = file_info.get("name", "attached_file")
-        file_type = file_info.get("type", "").lower()
-        is_text_based = file_type.startswith("text/") or any(file_name.lower().endswith(ext) for ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.log'])
-
-        augmented_content = f"User's message: {last_user_msg_content}" # Default if no file content
-
-        if is_text_based:
-            retrieved_content = _get_file_content_from_storage(file_info["storage_path"])
-            if retrieved_content:
-                augmented_content = f"User uploaded file: {file_name}\\nContent:\\n{retrieved_content}\\n\\nUser's message: {last_user_msg_content}"
-            else:
-                augmented_content = f"User uploaded file: {file_name} (content not available or error loading).\\n\\nUser's message: {last_user_msg_content}"
-        else:
-            augmented_content = f"User uploaded file: {file_name} (type: {file_type}, non-text content not displayed).\\n\\nUser's message: {last_user_msg_content}"
-        
-        processed_messages[-1]["content"] = augmented_content
-        print(f"Augmented current user message with file: {file_name}")
-
-    return processed_messages
 
 def register_user(email, password):
     """Register a new user in Firestore using the 'users' collection."""
@@ -326,76 +244,6 @@ def signup():
             return redirect(url_for('dashboard'))
         flash(message)
     return render_template('signup.html')
-
-@app.route('/upload_file_to_chat', methods=['POST'])
-def upload_file_to_chat():
-    if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized. Please log in again.'}), 401
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part in the request.'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected for upload.'}), 400
-
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        user_email = session.get('user_email', 'unknown_user')
-        chat_id = session.get('active_chat_id', 'unknown_chat') # Ensure active_chat_id is in session
-
-        if chat_id == 'unknown_chat':
-            # Fallback or error if chat_id is not set,
-            # or create a temporary chat_id if that's part of the design for new chats.
-            # For now, let's assume active_chat_id should be present.
-            # If not, a new chat should be initiated first, or this endpoint needs a chat_id.
-            # A simple solution for now if chat_id is missing, is to generate one,
-            # but this might lead to orphaned files if the chat isn't saved.
-            # A better approach is to ensure chat_id is always available.
-            # For this iteration, let's make it a requirement or use a default.
-            # For robustness, let's use a temporary ID if none is found, but log a warning.
-            chat_id = session.get('active_chat_id')
-            if not chat_id:
-                # This case should ideally be handled by ensuring a chat session is active.
-                # If a file is uploaded before a chat is formally started,
-                # it might be associated with a temporary ID or a default "pre-chat" bucket.
-                # For now, let's use a generic placeholder if no chat_id exists.
-                # This implies the file is uploaded before the first message that creates the chat.
-                # This might require adjustment based on when active_chat_id is set.
-                # A robust solution would be to pass chat_id from client if it exists,
-                # or have client ensure chat is initiated.
-                # For now, let's assume active_chat_id is usually set.
-                # If not, this is a potential issue.
-                # Let's default to a temporary chat_id if not found, but this is not ideal.
-                chat_id = f"temp_chat_for_{user_email.split('@')[0]}"
-                print(f"Warning: active_chat_id not found in session for file upload. Using temporary: {chat_id}")
-
-
-        unique_id = uuid.uuid4().hex
-        storage_filename = f"{unique_id}_{filename}"
-        storage_path = f"user_uploads/{user_email}/{chat_id}/{storage_filename}"
-
-        try:
-            blob = bucket.blob(storage_path)
-            blob.upload_from_file(file.stream, content_type=file.content_type)
-            file_size = file.tell() # Get file size after stream has been read by upload_from_file
-
-            file_info = {
-                'name': filename,
-                'storage_path': storage_path,
-                'type': file.content_type,
-                'size': file_size # file.content_length might be -1 if client doesn't send it
-            }
-            
-            # DO NOT add to chat history here. Return file_info to client.
-            # The client will send this file_info with the next message.
-            print(f"File {filename} uploaded to {storage_path}. Info: {file_info}")
-            return jsonify({'message': 'File uploaded successfully, awaiting message.', 'file_info': file_info}), 200
-
-        except Exception as e:
-            print(f"Error uploading file to Firebase Storage: {e}")
-            return jsonify({'error': f'Failed to upload file to storage: {str(e)}'}), 500
-    else:
-        return jsonify({'error': 'File type not allowed'}), 400
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -763,6 +611,9 @@ def chat():
                 'messages': [],
                 'created_at': datetime.now(timezone.utc).isoformat()
             }
+            user_history.insert(0, active_conversation_obj)
+            session['active_chat_id'] = new_chat_id
+            app.logger.info(f"Created new chat {new_chat_id} for user {email} in /chat endpoint")
 
     # Make a mutable copy of messages from the definitive active_conversation_obj
     # This list will be built up and then assigned back.
@@ -805,7 +656,7 @@ def chat():
     system_prompt = generate_system_prompt(disciplinarian_config, user_name, user_gender, profile)
     
     # messages_for_ai should use the messages from active_conversation_obj, which now includes the user's new message
-    messages_for_ai = _prepare_messages_for_ai(system_prompt, active_conversation_obj.get('messages', []))
+    messages_for_ai = [{'role': 'system', 'content': system_prompt}] + active_conversation_obj['messages']
 
     def generate_stream():
         nonlocal active_conversation_obj # Ensure we're modifying the one from the outer scope
@@ -966,7 +817,7 @@ def chat_stream_message():
     user_gender = profile.get('user_gender', 'unknown gender')
     disciplinarian_config = profile.get('disciplinarian', {})
     system_prompt = generate_system_prompt(disciplinarian_config, user_name, user_gender, profile)
-    messages_for_ai = _prepare_messages_for_ai(system_prompt, active_conversation_obj.get('messages', []))
+    messages_for_ai = [{'role': 'system', 'content': system_prompt}] + active_conversation_obj['messages']
 
     def generate_get_stream():
         nonlocal active_conversation_obj, conversation_name_updated
@@ -1115,13 +966,12 @@ def clear_all_todos():
     return jsonify({'message': 'All to-dos cleared successfully'}), 200
 
 # Utility to build system prompt from disciplinarian config
-def generate_system_prompt(config, user_name, user_gender, user_profile=None):
+def generate_system_prompt(config, user_name, user_gender, user_profile=None, chat_id=None):
     name = config.get('name', "Disciplinarian")
     age = config.get('age', "an unspecified age")
     gender = config.get('gender', "an unspecified gender")
     personality = config.get('personality', "standard")
     strictness = config.get('strictness', "moderate")
-    # punishments_config = disciplinarian_config.get('punishments', []) # Not used in prompt typically
 
     prompt = (
         f"You are {name}, a {gender} disciplinarian of {age}. "
@@ -1164,6 +1014,19 @@ def generate_system_prompt(config, user_name, user_gender, user_profile=None):
             prompt += f"\n{user_name}'s current to-do items:\n"
             for i, to_do in enumerate(active_to_dos, 1):
                 prompt += f"{i}. {to_do}\n"
+        
+        # Add file context if available and chat_id is provided
+        if chat_id:
+            email = session.get('user_email')
+            if email:
+                file_context = get_chat_file_context(email, chat_id)
+                if file_context:
+                    prompt += f"\n\nFiles uploaded by {user_name} for context:\n"
+                    for i, file_info in enumerate(file_context, 1):
+                        filename = file_info.get('filename', 'Unknown file')
+                        content = file_info.get('content', '')
+                        prompt += f"\n{i}. File: {filename}\nContent:\n{content}\n"
+                    prompt += "\nUse the information from these files to inform your responses when relevant."
         
         if rules or active_punishments or active_to_dos:
             prompt += "\nRefer to these rules, punishments, and tasks as appropriate during your interactions."
@@ -1350,6 +1213,106 @@ def delete_to_do():
     return jsonify({'error': 'To-do not found'}), 404
 
 
+# ----- File Upload Helper Functions -----
+def allowed_file(filename):
+    """Check if the uploaded file has an allowed extension."""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def extract_text_from_file(file_path, original_filename):
+    """Extract text content from uploaded files."""
+    try:
+        file_extension = original_filename.rsplit('.', 1)[1].lower()
+        
+        if file_extension == 'txt':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        
+        elif file_extension == 'pdf':
+            with open(file_path, 'rb') as f:
+                pdf_reader = PyPDF2.PdfReader(f)
+                text = ""
+                for page in pdf_reader.pages:
+                    text += page.extract_text() + "\n"
+                return text
+        
+        elif file_extension in ['doc', 'docx']:
+            if file_extension == 'docx':
+                doc = docx.Document(file_path)
+                text = ""
+                for paragraph in doc.paragraphs:
+                    text += paragraph.text + "\n"
+                return text
+            else:
+                # For .doc files, we'll try to read as text (basic fallback)
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    return f.read()
+        
+        elif file_extension in ['md', 'rtf']:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                return f.read()
+        
+        else:
+            return "Unsupported file type"
+    
+    except Exception as e:
+        app.logger.error(f"Error extracting text from file {original_filename}: {e}")
+        return f"Error reading file: {str(e)}"
+
+def save_file_to_chat_context(email, chat_id, filename, file_content):
+    """Save file content to chat context in user's profile."""
+    try:
+        profile = _get_profile(email)
+        user_history = profile.get('history', [])
+        
+        # Find the specific chat
+        target_chat = None
+        for chat in user_history:
+            if chat['id'] == chat_id:
+                target_chat = chat
+                break
+        
+        if not target_chat:
+            return False, "Chat not found"
+        
+        # Initialize file_context if it doesn't exist
+        if 'file_context' not in target_chat:
+            target_chat['file_context'] = []
+        
+        # Add file information to chat context
+        file_info = {
+            'filename': filename,
+            'content': file_content,
+            'uploaded_at': datetime.now(timezone.utc).isoformat()
+        }
+        
+        target_chat['file_context'].append(file_info)
+        
+        # Update the profile
+        _update_profile(email, {'history': user_history})
+        
+        return True, "File saved to chat context"
+    
+    except Exception as e:
+        app.logger.error(f"Error saving file to chat context: {e}")
+        return False, f"Error saving file: {str(e)}"
+
+def get_chat_file_context(email, chat_id):
+    """Get file context for a specific chat."""
+    try:
+        profile = _get_profile(email)
+        user_history = profile.get('history', [])
+        
+        # Find the specific chat
+        for chat in user_history:
+            if chat['id'] == chat_id:
+                return chat.get('file_context', [])
+        
+        return []
+    except Exception as e:
+        app.logger.error(f"Error getting chat file context: {e}")
+        return []
+
 def _analyze_message_for_actions_internal(message_text):
     """
     Internal helper to analyze message text for actions using DeepInfra.
@@ -1535,5 +1498,128 @@ def strip_think_tags(text):
     # If no </think> tag found, return original text
     return text
 
-if __name__ == '__main__':
-    app.run(debug=True)
+# ----- File Upload Routes -----
+@app.route('/upload_file', methods=['POST'])
+def upload_file():
+    """Handle file upload and add content to chat context."""
+    if 'user_email' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    chat_id = request.form.get('chat_id')
+    
+    if not chat_id:
+        return jsonify({'error': 'No chat ID provided'}), 400
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not allowed_file(file.filename):
+        return jsonify({'error': f'File type not allowed. Supported types: {", ".join(ALLOWED_EXTENSIONS)}'}), 400
+    
+    try:
+        # Secure the filename
+        filename = secure_filename(file.filename)
+        
+        # Create a unique filename to avoid conflicts
+        unique_filename = f"{uuid.uuid4()}_{filename}"
+        file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+        
+        # Save the file temporarily
+        file.save(file_path)
+        
+        # Extract text content
+        file_content = extract_text_from_file(file_path, filename)
+        
+        # Save to chat context
+        email = session['user_email']
+        success, message = save_file_to_chat_context(email, chat_id, filename, file_content)
+        
+        # Clean up the temporary file
+        try:
+            os.remove(file_path)
+        except Exception as cleanup_error:
+            app.logger.warning(f"Failed to cleanup temporary file {file_path}: {cleanup_error}")
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'File uploaded and added to chat context successfully',
+                'filename': filename,
+                'content_preview': file_content[:200] + '...' if len(file_content) > 200 else file_content
+            })
+        else:
+            return jsonify({'error': message}), 500
+    
+    except Exception as e:
+        app.logger.error(f"Error uploading file: {e}")
+        return jsonify({'error': f'Failed to upload file: {str(e)}'}), 500
+
+@app.route('/get_chat_files/<chat_id>', methods=['GET'])
+def get_chat_files(chat_id):
+    """Get list of files uploaded to a specific chat."""
+    if 'user_email' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    email = session['user_email']
+    file_context = get_chat_file_context(email, chat_id)
+    
+    # Return only metadata, not full content
+    file_list = []
+    for file_info in file_context:
+        file_list.append({
+            'filename': file_info.get('filename', 'Unknown'),
+            'uploaded_at': file_info.get('uploaded_at'),
+            'content_preview': file_info.get('content', '')[:100] + '...' if len(file_info.get('content', '')) > 100 else file_info.get('content', '')
+        })
+    
+    return jsonify(file_list)
+
+@app.route('/remove_chat_file', methods=['POST'])
+def remove_chat_file():
+    """Remove a file from chat context."""
+    if 'user_email' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    data = request.json
+    chat_id = data.get('chat_id')
+    filename = data.get('filename')
+    
+    if not chat_id or not filename:
+        return jsonify({'error': 'Chat ID and filename are required'}), 400
+    
+    try:
+        email = session['user_email']
+        profile = _get_profile(email)
+        user_history = profile.get('history', [])
+        
+        # Find the specific chat
+        target_chat = None
+        for chat in user_history:
+            if chat['id'] == chat_id:
+                target_chat = chat
+                break
+        
+        if not target_chat:
+            return jsonify({'error': 'Chat not found'}), 404
+        
+        # Remove the file from file_context
+        file_context = target_chat.get('file_context', [])
+        updated_context = [f for f in file_context if f.get('filename') != filename]
+        
+        if len(updated_context) == len(file_context):
+            return jsonify({'error': 'File not found in chat context'}), 404
+        
+        target_chat['file_context'] = updated_context
+        
+        # Update the profile
+        _update_profile(email, {'history': user_history})
+        
+        return jsonify({'success': True, 'message': 'File removed from chat context'})
+    
+    except Exception as e:
+        app.logger.error(f"Error removing file from chat context: {e}")
+        return jsonify({'error': f'Failed to remove file: {str(e)}'}), 500
