@@ -44,7 +44,7 @@
                         } else { // assistant
                             messageDiv.classList.add('ai-message');
                             // Consider using the disciplinarian's actual name if available
-                            messageDiv.textContent = 'AI: ' + msg.content; 
+                            messageDiv.innerHTML = 'AI: ' + msg.content.replace(/\n/g, '<br>'); 
                         }
                         chatBox.appendChild(messageDiv);
                     }
@@ -113,7 +113,7 @@
                         console.error('Chat API response error: data or data.reply is missing', data);
                     }
                 }
-                aiMessageDiv.textContent = 'AI: ' + aiResponseText; // Consider using actual disciplinarian name
+                aiMessageDiv.innerHTML = 'AI: ' + aiResponseText.replace(/\n/g, '<br>'); // Consider using actual disciplinarian name
                 chatBox.appendChild(aiMessageDiv);
 
             } catch (error) {
