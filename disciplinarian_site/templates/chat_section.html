@@ -1,5 +1,8 @@
 <div class="chat-container"> <!-- Use a class for styling consistency -->
-    <h2>Chat</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <!-- Removed h2 id="chat-title" element -->
+        <button onclick="startNewChat()" style="margin-bottom: 10px;">New Chat</button>
+    </div>
     <div id="chat-box">
         <!-- Messages will be dynamically added here by JavaScript -->
     </div>

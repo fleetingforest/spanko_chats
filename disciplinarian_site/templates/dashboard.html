@@ -5,170 +5,413 @@
     <title>Disciplinarian Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script>
+        const currentUserDisplayName = "{{ user_name|e }}";
+        const aiDisplayName = "{{ ai_name|e }}";
+
+        let activeChat = {
+            id: null,
+            name: 'New Chat',
+            messages: [],
+            created_at: null
+        };
+
         function showSection(id) {
             document.querySelectorAll('.section').forEach(sec => sec.style.display = 'none');
             const sectionToShow = document.getElementById(id);
             if (sectionToShow) {
                 sectionToShow.style.display = 'block';
             }
-            if(id === 'chat') loadChatMessages();
-            if(id === 'history') loadHistory();
+            if(id === 'chat') displayChatMessages(); // Refresh chat view
+            if(id === 'history') loadHistoryList();
             if(id === 'rules') loadRules();
             if(id === 'punishments') loadPunishments();
             if(id === 'todo') loadTodos();
         }
 
-        async function loadChatMessages() {
+        async function initializeDashboard() {
+            try {
+                const res = await fetch('/data/active_chat_session');
+                if (!res.ok) {
+                    if (res.status === 401) { // Unauthorized
+                        window.location.href = "{{ url_for('login') }}";
+                        return;
+                    }
+                    console.error('Failed to load active chat session:', res.status);
+                    // Fallback to a new local chat object if server fails unexpectedly
+                    activeChat = { id: null, name: 'Error Loading Chat', messages: [], created_at: new Date().toISOString() };
+                } else {
+                    activeChat = await res.json();
+                }
+            } catch (error) {
+                console.error('Error initializing dashboard:', error);
+                activeChat = { id: null, name: 'Network Error', messages: [], created_at: new Date().toISOString() };
+            }
+            displayChatMessages();
+            // updateChatTitle(); // Removed call
+            // Show chat section by default
+            showSection('chat');
+        }
+
+        function displayChatMessages() {
             const chatBox = document.getElementById('chat-box');
             if (!chatBox) return;
             chatBox.innerHTML = ''; // Clear existing messages
 
-            try {
-                const res = await fetch('data/history');
-                if (!res.ok) {
-                    const errorText = await res.text();
-                    console.error('Failed to load chat history:', res.status, errorText);
-                    const errorDiv = document.createElement('div');
-                    errorDiv.classList.add('ai-message'); 
-                    errorDiv.textContent = 'Error loading chat history.';
-                    chatBox.appendChild(errorDiv);
-                    return;
-                }
-                const history = await res.json();
-                history.forEach(msg => {
-                    if (msg.role === 'user' || msg.role === 'assistant') {
-                        const messageDiv = document.createElement('div');
-                        if (msg.role === 'user') {
-                            messageDiv.classList.add('user-message');
-                            messageDiv.textContent = 'You: ' + msg.content;
-                        } else { // assistant
-                            messageDiv.classList.add('ai-message');
-                            // Consider using the disciplinarian's actual name if available
-                            messageDiv.innerHTML = 'AI: ' + msg.content.replace(/\n/g, '<br>'); 
-                        }
-                        chatBox.appendChild(messageDiv);
+            if (!activeChat || !activeChat.messages) {
+                console.warn("No active chat or messages to display.");
+                return;
+            }
+
+            activeChat.messages.forEach(msg => {
+                if (msg.role === 'user' || msg.role === 'assistant') {
+                    const messageDiv = document.createElement('div');
+                    if (msg.role === 'user') {
+                        messageDiv.classList.add('user-message');
+                        messageDiv.textContent = currentUserDisplayName + ': ' + msg.content;
+                    } else { // assistant
+                        messageDiv.classList.add('ai-message');
+                        messageDiv.innerHTML = aiDisplayName + ': ' + msg.content.replace(/\n/g, '<br>');
                     }
-                });
-                chatBox.scrollTop = chatBox.scrollHeight;
-            } catch (error) {
-                console.error('Error processing chat history:', error);
-                const errorDiv = document.createElement('div');
-                errorDiv.classList.add('ai-message');
-                errorDiv.textContent = 'Error displaying chat history.';
-                chatBox.appendChild(errorDiv);
+                    chatBox.appendChild(messageDiv);
+                }
+            });
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+        
+        /* Removed updateChatTitle function
+        function updateChatTitle() {
+            const chatTitleElement = document.getElementById('chat-title'); 
+            if (chatTitleElement) {
+                let titleToDisplay = activeChat.name;
+                if (titleToDisplay === 'New Chat' || titleToDisplay === 'Legacy Chat') {
+                    titleToDisplay = ''; 
+                }
+                chatTitleElement.textContent = titleToDisplay || ''; 
             }
         }
+        */
 
         async function sendMessage() {
             const messageInput = document.getElementById('message-input');
             if (!messageInput) return;
-            const message = messageInput.value.trim();
-            if (!message) return;
+            const messageContent = messageInput.value.trim();
+            if (!messageContent) return;
 
             const chatBox = document.getElementById('chat-box');
             if (!chatBox) return;
 
-            // Display user's message
-            const userMessageDiv = document.createElement('div');
-            userMessageDiv.classList.add('user-message');
-            userMessageDiv.textContent = 'You: ' + message;
-            chatBox.appendChild(userMessageDiv);
-            
-            messageInput.value = ''; // Clear input field
-            resetTextareaHeight(); // Reset textarea height
-            chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
+            const userMessage = { role: 'user', content: messageContent };
+            activeChat.messages.push(userMessage);
+            displayChatMessages(); // Display user message immediately
+            chatBox.scrollTop = chatBox.scrollHeight; // Scroll after user message
+
+            messageInput.value = ''; 
+            resetTextareaHeight(); 
+
+            // Add typing indicator immediately
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'ai-message typing-indicator';
+            typingDiv.id = 'typing-indicator';
+            typingDiv.innerHTML = aiDisplayName + ' is typing...';
+            chatBox.appendChild(typingDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
-                const res = await fetch('chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message})
-                });
+                // Use EventSource for streaming
+                const eventSource = new EventSource(`/chat_stream?message=${encodeURIComponent(messageContent)}`);
+                let aiMessageDiv = null;
+                let fullAiResponse = '';
 
-                let aiResponseText = '';
-                const aiMessageDiv = document.createElement('div');
-                aiMessageDiv.classList.add('ai-message');
-
-                if (!res.ok) {
-                    let errorMsg = `Error: ${res.status} ${res.statusText}`;
-                    try {
-                        const errorData = await res.json();
-                        if (errorData && errorData.error) {
-                            errorMsg = `Server error: ${errorData.error}`;
-                        } else if (errorData && errorData.reply) { // Handle cases where error might be in 'reply'
-                            errorMsg = `Server note: ${errorData.reply}`;
+                eventSource.onmessage = function(event) {
+                    if (event.data === '[DONE]') {
+                        eventSource.close();
+                        
+                        // Remove typing indicator
+                        const typingIndicator = document.getElementById('typing-indicator');
+                        if (typingIndicator) {
+                            chatBox.removeChild(typingIndicator);
                         }
-                    } catch (e) {
-                        const rawErrorText = await res.text(); // Attempt to get raw text
-                        errorMsg = `Error: ${res.status} ${res.statusText}. Response: ${rawErrorText.substring(0,100)}`;
+
+                        // Add complete message to activeChat
+                        if (fullAiResponse) {
+                            activeChat.messages.push({ role: 'assistant', content: fullAiResponse });
+                        }
+                        return;
                     }
-                    aiResponseText = errorMsg;
-                    console.error('Chat API error:', errorMsg);
-                } else {
-                    const data = await res.json();
-                    if (data && data.reply) {
-                        aiResponseText = data.reply;
-                    } else {
-                        aiResponseText = 'Received an empty or invalid response from server.';
-                        console.error('Chat API response error: data or data.reply is missing', data);
+
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.type === 'start') {
+                            // Remove typing indicator and create AI message div
+                            const typingIndicator = document.getElementById('typing-indicator');
+                            if (typingIndicator) {
+                                chatBox.removeChild(typingIndicator);
+                            }
+                            
+                            aiMessageDiv = document.createElement('div');
+                            aiMessageDiv.className = 'ai-message';
+                            aiMessageDiv.innerHTML = aiDisplayName + ': ';
+                            chatBox.appendChild(aiMessageDiv);
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        }
+                        else if (data.type === 'content' && aiMessageDiv) {
+                            // Append content to the AI message
+                            fullAiResponse += data.content;
+                            aiMessageDiv.innerHTML = aiDisplayName + ': ' + fullAiResponse.replace(/\n/g, '<br>');
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        }
+                        else if (data.type === 'metadata' && data.chat_name) {
+                            // Update chat name if provided
+                            activeChat.name = data.chat_name;
+                        }
+                        else if (data.type === 'complete') {
+                            // Handle completion and suggestions
+                            if (data.suggestion) {
+                                showSuggestionModal(data.suggestion);
+                            }
+                        }
+                        else if (data.type === 'error') {
+                            console.error('Stream error:', data.message);
+                            if (aiMessageDiv) {
+                                aiMessageDiv.innerHTML = aiDisplayName + ': Error: ' + data.message;
+                            }
+                        }
+                    } catch (parseError) {
+                        console.error('Error parsing stream data:', parseError);
                     }
-                }
-                aiMessageDiv.innerHTML = 'AI: ' + aiResponseText.replace(/\n/g, '<br>'); // Consider using actual disciplinarian name
-                chatBox.appendChild(aiMessageDiv);
+                };
+
+                eventSource.onerror = function(error) {
+                    console.error('EventSource error:', error);
+                    eventSource.close();
+                    
+                    // Remove typing indicator
+                    const typingIndicator = document.getElementById('typing-indicator');
+                    if (typingIndicator) {
+                        chatBox.removeChild(typingIndicator);
+                    }
+                    
+                    // Show error message
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'ai-message';
+                    errorDiv.innerHTML = aiDisplayName + ': Connection error. Please try again.';
+                    chatBox.appendChild(errorDiv);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                };
 
             } catch (error) {
-                const aiMessageDiv = document.createElement('div');
-                aiMessageDiv.classList.add('ai-message'); 
-                aiMessageDiv.textContent = 'AI: Failed to send message. Network error or server issue.';
-                chatBox.appendChild(aiMessageDiv);
-                console.error('Failed to send message:', error);
+                console.error('Failed to start stream:', error);
+                // Remove typing indicator
+                const typingIndicator = document.getElementById('typing-indicator');
+                if (typingIndicator) {
+                    chatBox.removeChild(typingIndicator);
+                }
+                
+                // Fall back to regular POST request
+                try {
+                    const res = await fetch('/chat', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({message: messageContent}) 
+                    });
+
+                    let aiReplyText = null; // To store AI reply for analysis
+
+                    if (!res.ok) {
+                        let errorMsg = `Error: ${res.status} ${res.statusText}`;
+                        try {
+                            const errorData = await res.json();
+                            errorMsg = errorData.error || errorData.reply || errorMsg;
+                        } catch (e) { /* ignore parsing error if not json */ }
+                        
+                        const aiErrorMessage = { role: 'assistant', content: `Error: ${errorMsg}` };
+                        activeChat.messages.push(aiErrorMessage);
+                        console.error('Chat API error:', errorMsg);
+                    } else {
+                        const data = await res.json();
+                        const aiMessage = { role: 'assistant', content: data.reply };
+                        activeChat.messages.push(aiMessage);
+                        if (data.chat_name && activeChat.name !== data.chat_name) {
+                            activeChat.name = data.chat_name;
+                        }
+                        aiReplyText = data.reply; // Store AI reply for later analysis
+                    }
+                    
+                    displayChatMessages(); // Display AI message (or error) immediately
+                    chatBox.scrollTop = chatBox.scrollHeight; // Scroll after AI message
+
+                    // Analyze AI message AFTER it's been displayed
+                    if (aiReplyText && aiReplyText.trim() !== "") { 
+                        // Call analysis asynchronously (fire and forget from UI perspective)
+                        analyzeMessageForActions(aiReplyText).catch(error => {
+                            console.error("Error during background message analysis:", error);
+                        });
+                    }
+
+                } catch (fallbackError) {
+                    console.error('Failed to send message via fallback:', fallbackError);
+                    const networkErrorMessage = { role: 'assistant', content: 'Network error or server issue.' };
+                    activeChat.messages.push(networkErrorMessage);
+                    displayChatMessages(); // Display network error immediately
+                    chatBox.scrollTop = chatBox.scrollHeight; // Scroll after network error
+                }
             }
-            chatBox.scrollTop = chatBox.scrollHeight;
         }
 
-        async function loadHistory(){
-            const historyList = document.getElementById('history-list');
-            if (!historyList) return;
-            const res = await fetch('data/history');
-            const history = await res.json();
-            historyList.innerHTML = '';
-            history.forEach(h => { 
-                if(h.role==='user'||h.role==='assistant'){ 
-                    const li = document.createElement('li'); 
-                    li.textContent = h.role.charAt(0).toUpperCase() + h.role.slice(1) + ': ' + h.content; 
-                    historyList.appendChild(li);
-                } 
-            });
+        async function loadHistoryList(){
+            const historyListEl = document.getElementById('history-list');
+            if (!historyListEl) return;
+            historyListEl.innerHTML = '<li>Loading history...</li>';
+            try {
+                const res = await fetch('/data/history_list');
+                const historyItems = await res.json();
+                historyListEl.innerHTML = ''; // Clear loading/previous items
+                if (historyItems.length === 0) {
+                    historyListEl.innerHTML = '<li>No past conversations found.</li>';
+                    return;
+                }
+                historyItems.forEach(chatSummary => { 
+                    const li = document.createElement('li');
+                    const date = new Date(chatSummary.created_at).toLocaleString();
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.textContent = `${chatSummary.name || 'Unnamed Chat'} (Started: ${date})`; 
+                    textSpan.style.cursor = 'pointer';
+                    textSpan.onclick = async () => {
+                        try {
+                            const selectRes = await fetch('/select_chat_session/' + chatSummary.id, { method: 'POST' });
+                            if (!selectRes.ok) throw new Error(`Failed to select chat: ${selectRes.status}`);
+                            activeChat = await selectRes.json();
+                            showSection('chat'); // Switches view and calls displayChatMessages
+                            // updateChatTitle(); // Removed call
+                        } catch (err) {
+                            console.error("Error selecting chat from history:", err);
+                            alert("Could not load selected chat.");
+                        }
+                    };
+                    li.appendChild(textSpan);
+
+                    const deleteButton = document.createElement('button');
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.style.marginLeft = '10px';
+                    deleteButton.style.padding = '2px 8px'; // Smaller padding for a less intrusive button
+                    deleteButton.onclick = (event) => {
+                        event.stopPropagation(); // Prevent li click event from firing
+                        deleteChatFromHistory(chatSummary.id);
+                    };
+                    li.appendChild(deleteButton);
+                    
+                    historyListEl.appendChild(li);
+                });
+            } catch (error) {
+                console.error("Failed to load history list:", error);
+                historyListEl.innerHTML = '<li>Error loading history.</li>';
+            }
         }
+
+        async function deleteChatFromHistory(chatId) {
+            if (confirm(`Are you sure you want to delete this chat session? This action cannot be undone.`)) {
+                try {
+                    const res = await fetch(`/delete_chat_session/${chatId}`, {
+                        method: 'POST' // Or 'DELETE' if your backend supports it
+                    });
+                    if (res.ok) {
+                        // Attempt to get a success message, if any, though not strictly necessary
+                        try {
+                            const data = await res.json();
+                            console.log(data.message || "Chat deleted successfully.");
+                        } catch (e) {
+                            // If response is not JSON, but still ok, log success
+                            console.log("Chat deleted successfully (non-JSON response).");
+                        }
+                        if (activeChat && activeChat.id === chatId) {
+                            // If the deleted chat was the active one, start a new chat
+                            await startNewChat(); 
+                        }
+                        loadHistoryList(); // Refresh the history list
+                    } else {
+                        let errorMsg = `Error: ${res.status} ${res.statusText}`;
+                        try {
+                            // Try to parse as JSON first
+                            const errorData = await res.json();
+                            errorMsg = errorData.error || errorData.message || JSON.stringify(errorData) || errorMsg;
+                        } catch (e) {
+                            // If JSON parsing fails, try to get text content
+                            try {
+                                const textError = await res.text();
+                                if (textError) errorMsg = textError;
+                            } catch (textE) {
+                                // Fallback if text parsing also fails
+                                errorMsg = `Failed to delete chat. Server returned ${res.status}. Could not parse error response.`;
+                            }
+                        }
+                        alert(`Error deleting chat: ${errorMsg}`);
+                    }
+                } catch (error) {
+                    console.error('Failed to delete chat session:', error);
+                    alert('Failed to delete chat session. Network error or server issue. Check console for details.');
+                }
+            }
+        }
+
+        async function startNewChat() {
+            try {
+                const res = await fetch('/new_chat_session', { method: 'POST' });
+                if (!res.ok) throw new Error(`Failed to start new chat: ${res.status}`);
+                activeChat = await res.json();
+                displayChatMessages(); // Will show an empty chat
+                // updateChatTitle(); // Removed call
+                showSection('chat'); // Ensure chat section is visible
+            } catch (error) {
+                console.error("Error starting new chat:", error);
+                alert("Could not start a new chat session.");
+            }
+        }
+
         async function loadRules(){
             const rulesList = document.getElementById('rules-list');
             if (!rulesList) return;
-            const res = await fetch('data/rules');
-            const rules = await res.json();
-            rulesList.innerHTML = '';
-            rules.forEach(r => { 
-                const li = document.createElement('li'); 
-                li.textContent = r; 
-                
-                const deleteButton = document.createElement('button');
-                deleteButton.textContent = 'Delete';
-                deleteButton.style.marginLeft = '10px';
-                deleteButton.onclick = () => deleteRule(r);
-                li.appendChild(deleteButton);
-                
-                rulesList.appendChild(li); 
-            });
+            rulesList.innerHTML = '<li>Loading...</li>'; // Add loading indicator
+            try {
+                const res = await fetch('data/rules');
+                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                const rules = await res.json();
+                rulesList.innerHTML = '';
+                if (rules.length === 0) rulesList.innerHTML = '<li>No rules defined.</li>';
+                rules.forEach(r => { 
+                    const li = document.createElement('li'); 
+                    li.textContent = r; 
+                    
+                    const deleteButton = document.createElement('button');
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.style.marginLeft = '10px';
+                    deleteButton.onclick = () => deleteRule(r);
+                    li.appendChild(deleteButton);
+                    
+                    rulesList.appendChild(li); 
+                });
+            } catch (error) {
+                console.error('Failed to load rules:', error);
+                rulesList.innerHTML = '<li>Error loading rules.</li>';
+            }
         }
         async function addRule() {
             const ruleInput = document.getElementById('new-rule-input');
             if (!ruleInput || !ruleInput.value.trim()) return;
-            await fetch('data/rules', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({rule: ruleInput.value.trim()})
-            });
-            ruleInput.value = '';
-            loadRules();
+            try {
+                const res = await fetch('data/rules', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({rule: ruleInput.value.trim()})
+                });
+                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                ruleInput.value = '';
+                loadRules();
+            } catch (error) {
+                console.error('Failed to add rule:', error);
+                alert('Failed to add rule.');
+            }
         }
 
         async function deleteRule(ruleText) {
@@ -182,8 +425,8 @@
                     if (res.ok) {
                         loadRules();
                     } else {
-                        const errorData = await res.json();
-                        alert(`Error deleting rule: ${errorData.error || 'Unknown error'}`);
+                        const errorData = await res.json().catch(() => ({error: 'Unknown error'}));
+                        alert(`Error deleting rule: ${errorData.error}`);
                     }
                 } catch (error) {
                     console.error('Failed to delete rule:', error);
@@ -195,32 +438,46 @@
         async function loadPunishments(){
             const punishmentsList = document.getElementById('punishments-list');
             if (!punishmentsList) return;
-            const res = await fetch('data/punishments');
-            const items = await res.json();
-            punishmentsList.innerHTML = '';
-            items.forEach(p => { 
-                const li = document.createElement('li'); 
-                li.textContent = p.text + (p.completed ? ' (done)' : ''); 
-                
-                const deleteButton = document.createElement('button');
-                deleteButton.textContent = 'Delete';
-                deleteButton.style.marginLeft = '10px';
-                deleteButton.onclick = () => deletePunishment(p.text);
-                li.appendChild(deleteButton);
+            punishmentsList.innerHTML = '<li>Loading...</li>';
+            try {
+                const res = await fetch('data/punishments');
+                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                const items = await res.json();
+                punishmentsList.innerHTML = '';
+                if (items.length === 0) punishmentsList.innerHTML = '<li>No punishments recorded.</li>';
+                items.forEach(p => { 
+                    const li = document.createElement('li'); 
+                    li.textContent = p.text + (p.completed ? ' (done)' : ''); 
+                    
+                    const deleteButton = document.createElement('button');
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.style.marginLeft = '10px';
+                    deleteButton.onclick = () => deletePunishment(p.text);
+                    li.appendChild(deleteButton);
 
-                punishmentsList.appendChild(li); 
-            });
+                    punishmentsList.appendChild(li); 
+                });
+            } catch (error) {
+                console.error('Failed to load punishments:', error);
+                punishmentsList.innerHTML = '<li>Error loading punishments.</li>';
+            }
         }
          async function addPunishment() {
             const punishmentInput = document.getElementById('new-punishment-input');
             if (!punishmentInput || !punishmentInput.value.trim()) return;
-            await fetch('data/punishments', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({punishment: punishmentInput.value.trim()})
-            });
-            punishmentInput.value = '';
-            loadPunishments();
+            try {
+                const res = await fetch('data/punishments', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({punishment: punishmentInput.value.trim()})
+                });
+                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                punishmentInput.value = '';
+                loadPunishments();
+            } catch (error) {
+                console.error('Failed to add punishment:', error);
+                alert('Failed to add punishment.');
+            }
         }
 
         async function deletePunishment(punishmentText) {
@@ -234,8 +491,8 @@
                     if (res.ok) {
                         loadPunishments();
                     } else {
-                        const errorData = await res.json();
-                        alert(`Error deleting punishment: ${errorData.error || 'Unknown error'}`);
+                        const errorData = await res.json().catch(() => ({error: 'Unknown error'}));
+                        alert(`Error deleting punishment: ${errorData.error}`);
                     }
                 } catch (error) {
                     console.error('Failed to delete punishment:', error);
@@ -247,32 +504,46 @@
         async function loadTodos(){
             const todoList = document.getElementById('todo-list');
             if (!todoList) return;
-            const res = await fetch('data/todos');
-            const items = await res.json();
-            todoList.innerHTML = '';
-            items.forEach(t => { 
-                const li = document.createElement('li'); 
-                li.textContent = t.text + (t.completed ? ' (done)' : ''); 
-                
-                const deleteButton = document.createElement('button');
-                deleteButton.textContent = 'Delete';
-                deleteButton.style.marginLeft = '10px';
-                deleteButton.onclick = () => deleteTodo(t.text);
-                li.appendChild(deleteButton);
+            todoList.innerHTML = '<li>Loading...</li>';
+            try {
+                const res = await fetch('data/todos');
+                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                const items = await res.json();
+                todoList.innerHTML = '';
+                if (items.length === 0) todoList.innerHTML = '<li>No to-do items.</li>';
+                items.forEach(t => { 
+                    const li = document.createElement('li'); 
+                    li.textContent = t.text + (t.completed ? ' (done)' : ''); 
+                    
+                    const deleteButton = document.createElement('button');
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.style.marginLeft = '10px';
+                    deleteButton.onclick = () => deleteTodo(t.text);
+                    li.appendChild(deleteButton);
 
-                todoList.appendChild(li); 
-            });
+                    todoList.appendChild(li); 
+                });
+            } catch (error) {
+                console.error('Failed to load todos:', error);
+                todoList.innerHTML = '<li>Error loading to-dos.</li>';
+            }
         }
         async function addTodo() {
             const todoInput = document.getElementById('new-todo-input');
             if (!todoInput || !todoInput.value.trim()) return;
-            await fetch('data/todos', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({item: todoInput.value.trim()})
-            });
-            todoInput.value = '';
-            loadTodos();
+            try {
+                const res = await fetch('data/todos', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({item: todoInput.value.trim()})
+                });
+                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                todoInput.value = '';
+                loadTodos();
+            } catch (error) {
+                console.error('Failed to add todo:', error);
+                alert('Failed to add to-do.');
+            }
         }
 
         async function deleteTodo(todoText) {
@@ -286,8 +557,8 @@
                     if (res.ok) {
                         loadTodos();
                     } else {
-                        const errorData = await res.json();
-                        alert(`Error deleting to-do item: ${errorData.error || 'Unknown error'}`);
+                        const errorData = await res.json().catch(() => ({error: 'Unknown error'}));
+                        alert(`Error deleting to-do item: ${errorData.error}`);
                     }
                 } catch (error) {
                     console.error('Failed to delete to-do item:', error);
@@ -295,6 +566,80 @@
                 }
             }
         }
+
+
+        // Functions for AI Suggestion Modal
+        function showSuggestionModal(suggestion) {
+            document.getElementById('suggestionModalTitle').textContent = 'AI Suggestion';
+            document.getElementById('suggestionType').textContent = suggestion.type;
+            document.getElementById('suggestionText').value = suggestion.text;
+            document.getElementById('suggestionOriginalType').value = suggestion.type; // Store original type
+            document.getElementById('suggestionModal').style.display = 'block';
+
+            const confirmBtn = document.getElementById('confirmSuggestionBtn');
+            // Clone and replace the button to remove old event listeners
+            const newConfirmBtn = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+            
+            newConfirmBtn.onclick = async () => {
+                const editedText = document.getElementById('suggestionText').value.trim();
+                if (!editedText) {
+                    alert('Suggestion text cannot be empty.');
+                    return;
+                }
+                const type = document.getElementById('suggestionOriginalType').value;
+
+                try {
+                    if (type === 'rule') {
+                        document.getElementById('new-rule-input').value = editedText;
+                        await addRule();
+                    } else if (type === 'punishment') {
+                        document.getElementById('new-punishment-input').value = editedText;
+                        await addPunishment();
+                    } else if (type === 'todo') {
+                        document.getElementById('new-todo-input').value = editedText;
+                        await addTodo();
+                    }
+                    closeSuggestionModal();
+                } catch (error) {
+                    console.error('Error adding suggested item:', error);
+                    alert('Failed to add suggested item: ' + (error.message || 'Unknown error'));
+                }
+            };
+        }
+
+        function closeSuggestionModal() {
+            document.getElementById('suggestionModal').style.display = 'none';
+            document.getElementById('suggestionText').value = ''; // Clear textarea
+        }
+
+        async function analyzeMessageForActions(messageText) {
+            if (!messageText || messageText.trim() === "") return;
+            console.log("Analyzing AI message for actions:", messageText.substring(0, 100) + "...");
+            try {
+                const res = await fetch('/analyze_message_for_actions', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: messageText})
+                });
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({ error: `HTTP error ${res.status}` }));
+                    console.error('Failed to analyze message with AI:', errorData.error);
+                    // Optionally, inform the user that analysis failed, though it might be too noisy.
+                    return;
+                }
+                const suggestion = await res.json();
+                if (suggestion && suggestion.type && suggestion.text) {
+                    console.log("AI Suggestion received:", suggestion);
+                    showSuggestionModal(suggestion);
+                } else {
+                    console.log("No actionable suggestion from AI or invalid format received.");
+                }
+            } catch (error) {
+                console.error('Error calling /analyze_message_for_actions:', error);
+            }
+        }
+
 
         function resetTextareaHeight() {
             const textarea = document.getElementById('message-input');
@@ -305,26 +650,15 @@
         }
         
         document.addEventListener('DOMContentLoaded', () => {
-            // Add class to body for specific dashboard styling if needed
-            // document.body.classList.add('disciplinarian-dashboard-body');
+            initializeDashboard();
 
             const messageInput = document.getElementById('message-input');
             if (messageInput) {
                 messageInput.addEventListener('input', resetTextareaHeight);
-                 // Initial resize in case there's pre-filled text (unlikely here)
-                resetTextareaHeight();
-            }
-            
-            // Show the chat section by default and load its messages
-            // The HTML already has the chat section visible by default.
-            // We just need to load its content.
-            loadChatMessages();
-
-            // Add event listener for Enter key in message input
-            if (messageInput) {
+                resetTextareaHeight(); // Initial resize
                 messageInput.addEventListener('keypress', function(event) {
                     if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault(); // Prevent new line
+                        event.preventDefault(); 
                         sendMessage();
                     }
                 });
@@ -333,7 +667,7 @@
     </script>
 </head>
 <body>
-    <h1>Welcome, {{ session.get('user_name', 'User') }}</h1>
+    <h1>Welcome, {{ user_name }}</h1> <!-- Changed from session.get to direct variable -->
     <nav>
         <button onclick="showSection('chat')">Chat</button>
         <button onclick="showSection('history')">History</button>
@@ -345,6 +679,8 @@
             {{ 'Logout' if 'user_email' in session else 'Login' }}
         </a>
     </nav>
+    <!-- You might want a title display for the current chat -->
+    <!-- <h2 id="chat-title">Chat</h2> -->
     <div id="chat" class="section">
         {% include 'chat_section.html' %}
     </div>
@@ -359,6 +695,19 @@
     </div>
     <div id="todo" class="section" style="display:none">
         {% include 'todo_section.html' %}
+    </div>
+
+    <!-- Suggestion Modal -->
+    <div id="suggestionModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeSuggestionModal()">&times;</span>
+            <h3 id="suggestionModalTitle">AI Suggestion</h3>
+            <p>The AI suggests adding the following <strong id="suggestionType"></strong>:</p>
+            <textarea id="suggestionText" rows="3" style="width: 100%; margin-bottom: 10px; box-sizing: border-box; padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);"></textarea>
+            <input type="hidden" id="suggestionOriginalType">
+            <button id="confirmSuggestionBtn">Add Item</button>
+            <button onclick="closeSuggestionModal()" class="cancel-suggestion-btn">Cancel</button>
+        </div>
     </div>
 </body>
 </html>

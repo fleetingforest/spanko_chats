@@ -793,6 +793,77 @@ select {
     font-size: 1.3em;
 }
 
+/* Styles for Suggestion Modal */
+#suggestionModal .modal-content {
+    /* General modal-content styles are inherited */
+    padding: 20px 25px 30px 25px; /* Adjust padding if needed */
+}
+
+#suggestionModal .modal-content h3 { /* Title for suggestion modal */
+    color: var(--primary-color);
+    margin-bottom: 10px; /* Space below title */
+    font-size: 1.8em; /* Slightly larger title */
+}
+
+#suggestionModal .modal-content p {
+    margin-bottom: 15px; /* Space below the introductory paragraph */
+    font-size: 1em;
+    color: var(--text-color);
+}
+
+#suggestionModal .modal-content p strong { /* Style for the 'type' in "AI suggests adding the following type:" */
+    color: var(--primary-dark); /* Make type more prominent */
+    font-weight: 600;
+}
+
+#suggestionModal textarea#suggestionText {
+    width: 100%; 
+    box-sizing: border-box; /* Ensures padding and border don't add to width */
+    margin-bottom: 15px; 
+    padding: 10px 12px; 
+    border: 1px solid var(--border-color);
+    border-radius: 6px; 
+    font-family: inherit;
+    font-size: 15px;
+    min-height: 70px; /* Ensure enough space for a few lines */
+    resize: vertical; 
+    background-color: #fff; /* Ensure background for textarea */
+}
+
+#suggestionModal textarea#suggestionText:focus {
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(138, 60, 200, 0.15); /* Copied from general focus */
+    outline: none;
+}
+
+
+#suggestionModal button {
+    margin-top: 10px; /* Space above buttons */
+    padding: 10px 20px; /* Slightly smaller padding for modal buttons */
+    font-size: 15px;
+    /* General button styles are inherited for the confirm button */
+}
+
+#suggestionModal button#confirmSuggestionBtn {
+    /* Inherits general button styles, or can be customized */
+    background: linear-gradient(to right, var(--primary-color), var(--primary-dark));
+}
+#suggestionModal button#confirmSuggestionBtn:hover {
+    background: linear-gradient(to right, var(--primary-dark), var(--primary-color));
+}
+
+
+#suggestionModal button.cancel-suggestion-btn {
+    background: var(--light-text); 
+    color: white;
+    border: none; 
+    margin-left: 10px; /* Space it from the confirm button */
+}
+#suggestionModal button.cancel-suggestion-btn:hover {
+    background: #777; /* Darken light-text or a specific grey */
+}
+
+
 label {
     display: block;
     margin-bottom: 8px;
