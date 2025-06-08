@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, stream_with_context, Response
 import firebase_admin
-from firebase_admin import credentials, firestore, auth, storage
+from firebase_admin import credentials, firestore, storage # Removed auth
 from openai import OpenAI as FireworksOpenAI # Renamed to avoid conflict if another OpenAI client is used
 import os
 from datetime import datetime, timezone
@@ -10,7 +10,6 @@ import re # Added import for regular expressions
 import requests # For DeepInfra API call
 import json # Add json if not already imported
 from flask import stream_with_context # Add stream_with_context
-import sys # For sys.stdout.flush()
 import time # Added for token rate limiting
 from werkzeug.utils import secure_filename # For securing filenames
 import uuid # ensure uuid is imported, it is used for chat IDs and now for unique filenames
@@ -109,13 +108,25 @@ def format_ai_response_text(text):
 
 # Helper function to get file content (simplified: assumes text for now)
 def _get_file_content_from_storage(storage_path):
-    MAX_FILE_CONTENT_LENGTH = 50000  # Limit to ~50KB for now
+    MAX_FILE_CONTENT_LENGTH = 75000  # Increased limit slightly
+    MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5MB limit for downloading
     try:
         blob = bucket.blob(storage_path)
         if not blob.exists():
             print(f"Error: File not found in storage at path: {storage_path}")
-            return None
-        
+            # Extract filename for the message
+            filename_for_message = storage_path.split('/')[-1]
+            return f"[File '{filename_for_message}' not found in storage.]" # Corrected f-string
+
+        # Check file size before attempting to download
+        blob.reload() # Ensure metadata like size is up to date
+        if blob.size is None: # Handle case where size might not be available, though unlikely for existing blobs
+            print(f"Warning: File size for {storage_path} is None. Proceeding with download attempt.")
+        elif blob.size > MAX_FILE_SIZE_BYTES:
+            filename_for_message = blob.name.split('/')[-1]
+            print(f"Error: File {storage_path} is too large ({blob.size} bytes). Max allowed: {MAX_FILE_SIZE_BYTES} bytes.")
+            return f"[File '{filename_for_message}' is too large to process ({blob.size // 1024}KB).]" # Corrected f-string
+
         file_content_bytes = blob.download_as_bytes()
         
         # Attempt to decode as UTF-8, with fallback for common encodings if necessary
@@ -129,68 +140,51 @@ def _get_file_content_from_storage(storage_path):
                 return "[Content not displayable: file is binary or uses an unsupported encoding]"
 
         if len(file_content) > MAX_FILE_CONTENT_LENGTH:
-            file_content = file_content[:MAX_FILE_CONTENT_LENGTH] + "\\n[...content truncated...]"
+            # Extract filename for the message
+            filename_for_message = storage_path.split('/')[-1]
+            file_content = file_content[:MAX_FILE_CONTENT_LENGTH] + f"\\n[...content of {filename_for_message} truncated...]"
         return file_content
     except Exception as e:
         print(f"Error downloading or processing file from storage {storage_path}: {e}")
-        return None
+        # Extract filename for the message
+        filename_for_message = storage_path.split('/')[-1]
+        return f"[Error processing file '{filename_for_message}': {str(e)}]" # Corrected f-string
 
 # Helper function to prepare messages for AI, including file content
-def _prepare_messages_for_ai(system_prompt, conversation_messages, current_user_message_file_info=None):
+def _prepare_messages_for_ai(system_prompt, conversation_messages):
     processed_messages = []
     if system_prompt:
         processed_messages.append({"role": "system", "content": system_prompt})
 
-    # Process historical messages
-    for i, msg in enumerate(conversation_messages):
-        current_msg_for_ai = {"role": msg["role"], "content": msg["content"]}
-        
-        # Handle file_info in historical messages (if any were attached previously)
+    for msg in conversation_messages:
+        # If the message has file_info, insert a system message about the file first
         if msg.get("file_info") and msg["file_info"].get("storage_path"):
             file_info = msg["file_info"]
             file_name = file_info.get("name", "attached_file")
             file_type = file_info.get("type", "").lower()
-            is_text_based = file_type.startswith("text/") or any(file_name.lower().endswith(ext) for ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.log'])
+            
+            file_content_for_ai_report = ""
+            is_text_based = file_type.startswith("text/") or \
+                            any(file_name.lower().endswith(ext) for ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.log'])
 
             if is_text_based:
                 retrieved_content = _get_file_content_from_storage(file_info["storage_path"])
-                if retrieved_content:
-                    current_msg_for_ai["content"] = f"User uploaded file: {file_name}\\nContent:\\n{retrieved_content}\\n\\nUser's message: {msg['content']}"
-                else:
-                    current_msg_for_ai["content"] = f"User uploaded file: {file_name} (content not available or error loading).\\n\\nUser's message: {msg['content']}"
+                # retrieved_content will be the file content or an error/placeholder string from _get_file_content_from_storage
+                file_content_for_ai_report = f"--- Start of content for {file_name} ---\\n{retrieved_content}\\n--- End of content for {file_name} ---"
             else:
-                current_msg_for_ai["content"] = f"User uploaded file: {file_name} (type: {file_type}, non-text content not displayed).\\n\\nUser's message: {msg['content']}"
+                file_content_for_ai_report = f"[Non-text file attached: {file_name} (Type: {file_type}). Content not displayed.]"
+            
+            # Add the system message detailing the file upload
+            processed_messages.append({
+                "role": "system", 
+                "content": f"The user uploaded the file: {file_name}.\\n{file_content_for_ai_report}"
+            })
+
+        # Add the original message (user's text or assistant's reply)
+        # Ensure role is correctly passed, especially for assistant messages.
+        # Also, ensure 'content' exists, defaulting to empty string if not (though unlikely for valid messages).
+        processed_messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
         
-        processed_messages.append(current_msg_for_ai)
-
-    # Process the current user message, potentially with a newly uploaded file
-    # This part is tricky because conversation_messages ALREADY contains the latest user message
-    # from activeChat.messages. We need to ensure we're augmenting the *correct* one.
-    # The `current_user_message_file_info` is passed if the *very last* message being sent NOW has a file.
-
-    if current_user_message_file_info and processed_messages and processed_messages[-1]["role"] == "user":
-        # This assumes the last message in processed_messages is the one we want to augment
-        last_user_msg_content = processed_messages[-1]["content"] # Original text part
-        
-        file_info = current_user_message_file_info
-        file_name = file_info.get("name", "attached_file")
-        file_type = file_info.get("type", "").lower()
-        is_text_based = file_type.startswith("text/") or any(file_name.lower().endswith(ext) for ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.log'])
-
-        augmented_content = f"User's message: {last_user_msg_content}" # Default if no file content
-
-        if is_text_based:
-            retrieved_content = _get_file_content_from_storage(file_info["storage_path"])
-            if retrieved_content:
-                augmented_content = f"User uploaded file: {file_name}\\nContent:\\n{retrieved_content}\\n\\nUser's message: {last_user_msg_content}"
-            else:
-                augmented_content = f"User uploaded file: {file_name} (content not available or error loading).\\n\\nUser's message: {last_user_msg_content}"
-        else:
-            augmented_content = f"User uploaded file: {file_name} (type: {file_type}, non-text content not displayed).\\n\\nUser's message: {last_user_msg_content}"
-        
-        processed_messages[-1]["content"] = augmented_content
-        print(f"Augmented current user message with file: {file_name}")
-
     return processed_messages
 
 def register_user(email, password):
@@ -1042,17 +1036,17 @@ def chat_stream_message():
 @app.route('/delete_chat_session/<chat_id>', methods=['POST'])
 def delete_chat_session(chat_id):
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     profile = _get_profile(email)
-    user_history = profile.get('history', [])
+    user_history = profile.get('history', []) # This variable is used
     
     # Find and remove the chat with the specified ID
     updated_history = [chat for chat in user_history if chat['id'] != chat_id]
     
-    if len(updated_history) == len(user_history):
-        return jsonify({'error': 'Chat not found'}), 404
+    if len(updated_history) == len(user_history): # Check if any chat was actually removed
+        return jsonify({'error': 'Chat not found or no change made'}), 404 # Return early
     
     # Update the profile with the new history
     _update_profile(email, {'history': updated_history})
@@ -1066,7 +1060,7 @@ def delete_chat_session(chat_id):
 @app.route('/clear_all_history', methods=['POST'])
 def clear_all_history():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     
@@ -1081,7 +1075,7 @@ def clear_all_history():
 @app.route('/clear_all_rules', methods=['POST'])
 def clear_all_rules():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     
@@ -1093,7 +1087,7 @@ def clear_all_rules():
 @app.route('/clear_all_punishments', methods=['POST'])
 def clear_all_punishments():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     
@@ -1105,7 +1099,7 @@ def clear_all_punishments():
 @app.route('/clear_all_todos', methods=['POST'])
 def clear_all_todos():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     
@@ -1173,7 +1167,7 @@ def generate_system_prompt(config, user_name, user_gender, user_profile=None):
 @app.route('/data/rules', methods=['GET', 'POST'])
 def handle_rules():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     profile = _get_profile(email)
@@ -1185,19 +1179,19 @@ def handle_rules():
         data = request.json
         rule = data.get('rule', '').strip()
         if not rule:
-            return jsonify({'error': 'Rule cannot be empty'}), 400
+            return jsonify({'error': 'Rule cannot be empty'}), 400 # Return early
         
         rules = profile.get('rules', [])
         if rule not in rules:
             rules.append(rule)
-            _update_profile(email, {'rules': rules})
+            _update_profile(email, {'rules': rules}) # Save updated rules
         
-        return jsonify({'message': 'Rule added successfully'}), 200
+        return jsonify({'message': 'Rule added successfully', 'rule': rule}), 200 # Return success
 
 @app.route('/data/rules/delete', methods=['POST'])
 def delete_rule():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     profile = _get_profile(email)
@@ -1205,20 +1199,20 @@ def delete_rule():
     rule_to_delete = data.get('rule', '').strip()
     
     if not rule_to_delete:
-        return jsonify({'error': 'Rule cannot be empty'}), 400
+        return jsonify({'error': 'Rule to delete cannot be empty'}), 400 # Return early
     
     rules = profile.get('rules', [])
     if rule_to_delete in rules:
         rules.remove(rule_to_delete)
         _update_profile(email, {'rules': rules})
-        return jsonify({'message': 'Rule deleted successfully'}), 200
+        return jsonify({'message': 'Rule deleted successfully'}), 200 # Return success
     
     return jsonify({'error': 'Rule not found'}), 404
 
 @app.route('/data/punishments', methods=['GET', 'POST'])
 def handle_punishments():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     profile = _get_profile(email)
@@ -1238,7 +1232,7 @@ def handle_punishments():
         data = request.json
         punishment = data.get('punishment', '').strip()
         if not punishment:
-            return jsonify({'error': 'Punishment cannot be empty'}), 400
+            return jsonify({'error': 'Punishment cannot be empty'}), 400 # Return early
         
         punishments = profile.get('punishments', [])
         punishment_obj = {'text': punishment, 'completed': False}
@@ -1246,15 +1240,15 @@ def handle_punishments():
         # Check if punishment already exists
         existing = any(p.get('text') == punishment if isinstance(p, dict) else p == punishment for p in punishments)
         if not existing:
-            punishments.append(punishment_obj)
-            _update_profile(email, {'punishments': punishments})
+            punishments.append(punishment_obj) # Add new punishment object
+            _update_profile(email, {'punishments': punishments}) # Save updated punishments
         
-        return jsonify({'message': 'Punishment added successfully'}), 200
+        return jsonify({'message': 'Punishment added successfully', 'punishment': punishment_obj}), 200 # Return success
 
 @app.route('/data/punishments/delete', methods=['POST'])
 def delete_punishment():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     profile = _get_profile(email)
@@ -1262,7 +1256,7 @@ def delete_punishment():
     punishment_to_delete = data.get('punishment_text', '').strip()
     
     if not punishment_to_delete:
-        return jsonify({'error': 'Punishment cannot be empty'}), 400
+        return jsonify({'error': 'Punishment to delete cannot be empty'}), 400 # Return early
     
     punishments = profile.get('punishments', [])
     updated_punishments = []
@@ -1278,14 +1272,14 @@ def delete_punishment():
     
     if found:
         _update_profile(email, {'punishments': updated_punishments})
-        return jsonify({'message': 'Punishment deleted successfully'}), 200
+        return jsonify({'message': 'Punishment deleted successfully'}), 200 # Return success
     
     return jsonify({'error': 'Punishment not found'}), 404
 
 @app.route('/data/to_dos', methods=['GET', 'POST'])
 def handle_to_dos():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     profile = _get_profile(email)
@@ -1305,7 +1299,7 @@ def handle_to_dos():
         data = request.json
         to_do_item = data.get('item', '').strip()
         if not to_do_item:
-            return jsonify({'error': 'To-do item cannot be empty'}), 400
+            return jsonify({'error': 'To-do item cannot be empty'}), 400 # Return early
         
         todos = profile.get('todos', [])
         to_do_obj = {'text': to_do_item, 'completed': False}
@@ -1313,15 +1307,15 @@ def handle_to_dos():
         # Check if to-do already exists
         existing = any(t.get('text') == to_do_item if isinstance(t, dict) else t == to_do_item for t in todos)
         if not existing:
-            todos.append(to_do_obj)
-            _update_profile(email, {'todos': todos})
+            todos.append(to_do_obj) # Add new to-do object
+            _update_profile(email, {'todos': todos}) # Save updated to-dos
         
-        return jsonify({'message': 'To-do added successfully'}), 200
+        return jsonify({'message': 'To-do added successfully', 'item': to_do_obj}), 200 # Return success
 
 @app.route('/data/to_dos/delete', methods=['POST'])
 def delete_to_do():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
     
     email = session['user_email']
     profile = _get_profile(email)
@@ -1329,7 +1323,7 @@ def delete_to_do():
     to_do_to_delete = data.get('todo_text', '').strip()  # Keep 'todo_text' for API compatibility
     
     if not to_do_to_delete:
-        return jsonify({'error': 'To-do item cannot be empty'}), 400
+        return jsonify({'error': 'To-do to delete cannot be empty'}), 400 # Return early
     
     todos = profile.get('todos', [])
     updated_todos = []
@@ -1345,7 +1339,7 @@ def delete_to_do():
     
     if found:
         _update_profile(email, {'todos': updated_todos})
-        return jsonify({'message': 'To-do deleted successfully'}), 200
+        return jsonify({'message': 'To-do deleted successfully'}), 200 # Return success
     
     return jsonify({'error': 'To-do not found'}), 404
 
@@ -1489,17 +1483,17 @@ Do not include any other explanatory text, greetings, or markdown formatting aro
 @app.route('/analyze_message_for_actions', methods=['POST'])
 def analyze_message_for_actions_route():
     if 'user_email' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401 # Return early
 
     data = request.get_json()
     message_text = data.get('message')
 
     if not message_text:
-        return jsonify({"error": "No message provided for analysis"}), 400
+        return jsonify({'error': 'No message provided for analysis'}), 400 # Return early
     
     if not DEEPINFRA_API_KEY: # Check again as this is a public endpoint
         app.logger.error("DeepInfra API key (DEEPINFRA_API_KEY) not configured for route.")
-        return jsonify({"error": "AI analysis service not configured (API key missing)"}), 503
+        return jsonify({'error': 'Analysis service not configured'}), 503 # Return early
 
     suggestion = _analyze_message_for_actions_internal(message_text)
 
