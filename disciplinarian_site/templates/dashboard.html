@@ -16,6 +16,214 @@
         };
 
         let currentSelectedFile = null; // Variable to store the selected file
+        
+        // Voice chat variables
+        let voiceChatEnabled = false;
+        let mediaRecorder;
+        let audioChunks = [];
+        let recordingTimer;
+        let recordingSeconds = 0;
+
+        // Voice chat functions
+        function toggleVoiceChat() {
+            voiceChatEnabled = !voiceChatEnabled;
+            const voiceToggleBtn = document.getElementById('voice-toggle-btn');
+            // Voice input button and recording status are now always visible, so no need to toggle their display here.
+            const voiceToggleIcon = document.getElementById('voice-toggle-icon');
+            const voiceToggleText = document.getElementById('voice-toggle-text');
+            
+            if (voiceChatEnabled) {
+                voiceToggleBtn.classList.add('active');
+                voiceToggleIcon.textContent = '🔊';
+                voiceToggleText.textContent = 'Voice On';
+            } else {
+                voiceToggleBtn.classList.remove('active');
+                voiceToggleIcon.textContent = '🎤'; // Icon for the toggle button itself
+                voiceToggleText.textContent = 'Voice Chat';
+                
+                // Stop any ongoing recording if voice output is turned off
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    stopRecording();
+                }
+            }
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const secs = (seconds % 60).toString().padStart(2, '0');
+            return `${mins}:${secs}`;
+        }
+
+        function updateRecordingTime() {
+            recordingSeconds++;
+            const recordingTime = document.getElementById('recording-time');
+            if (recordingTime) {
+                recordingTime.textContent = formatTime(recordingSeconds);
+            }
+        }
+
+        function startRecording() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+                    
+                    mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        transcribeAudio(audioBlob);
+                    };
+                    
+                    // Start recording
+                    mediaRecorder.start();
+                    const voiceButton = document.getElementById('voice-input-btn');
+                    const recordingStatus = document.getElementById('recording-status');
+                    const recordingText = document.getElementById('recording-text');
+                    
+                    voiceButton.classList.add('recording');
+                    recordingStatus.classList.add('active');
+                    recordingText.textContent = 'Recording... Click the mic to stop';
+                    
+                    // Start the timer
+                    recordingSeconds = 0;
+                    const recordingTime = document.getElementById('recording-time');
+                    recordingTime.textContent = formatTime(recordingSeconds);
+                    recordingTimer = setInterval(updateRecordingTime, 1000);
+                })
+                .catch(error => {
+                    console.error('Error accessing microphone:', error);
+                    alert('Unable to access your microphone. Please ensure it is connected and you have given permission.');
+                });
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                
+                // Stop all audio tracks to release the microphone
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                
+                // Clear the timer
+                clearInterval(recordingTimer);
+                
+                // Update UI
+                const voiceButton = document.getElementById('voice-input-btn');
+                const recordingStatus = document.getElementById('recording-status');
+                const recordingText = document.getElementById('recording-text');
+                
+                voiceButton.classList.remove('recording');
+                recordingStatus.classList.remove('active');
+                recordingText.textContent = 'Transcribing...';
+            }
+        }
+
+        function transcribeAudio(audioBlob) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob);
+            
+            const recordingText = document.getElementById('recording-text');
+            recordingText.textContent = 'Processing your voice input...';
+            
+            fetch('/transcribe_audio', {
+                method: 'POST',
+                body: formData
+            })
+            .then(async response => { // Added async here
+                if (!response.ok) {
+                    let errorPayload = { message: `Server error: ${response.status}` }; // Default error
+                    try {
+                        // Attempt to parse a JSON error response from the server
+                        errorPayload = await response.json();
+                    } catch (e) {
+                        // If the response isn't JSON, use the statusText or the default message
+                        errorPayload.message = response.statusText || errorPayload.message;
+                    }
+                    // Throw an error with the message from the server payload or the constructed one
+                    throw new Error(errorPayload.error || errorPayload.message);
+                }
+                return response.json(); // If response is OK, parse JSON
+            })
+            .then(data => {
+                if (data.text) {
+                    document.getElementById('message-input').value = data.text;
+                    sendMessage(); // Auto-send the transcribed text
+                    recordingText.textContent = 'Click the microphone to start talking'; // Reset on success
+                } else if (data.status && data.status === "Token limit exceeded" && data.limit_data) {
+                    // This specific check handles cases where the server might send a 200 OK
+                    // with a token limit payload (though usually it's a 4xx error).
+                    console.error('Token limit exceeded:', data.limit_data);
+                    recordingText.textContent = data.limit_data.title || 'Token limit reached.';
+                    // Consider showing a specific modal for token limits here if available
+                    // e.g., showPatreonModal(data.limit_data);
+                    setTimeout(() => {
+                        recordingText.textContent = 'Click the microphone to start talking';
+                    }, 7000); // Longer display for token errors
+                } else {
+                    // If response was OK, but data.text is missing and not a known error format
+                    throw new Error('Transcription successful, but no text returned.');
+                }
+            })
+            .catch(error => {
+                console.error('Error transcribing audio:', error.message);
+                // Display a more specific error message to the user
+                recordingText.textContent = `Transcription Error: ${error.message}. Please try again.`;
+                setTimeout(() => {
+                    recordingText.textContent = 'Click the microphone to start talking';
+                }, 7000); // Display error for a longer duration
+            });
+        }
+
+        function convertTextToAudio(text) {
+            if (!text) return;
+            
+            fetch('/convert_to_audio', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ text: text })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.audio_url) {
+                    createAudioElement(data.audio_url);
+                } else {
+                    console.error('Failed to convert text to audio:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error converting text to audio:', error);
+            });
+        }
+
+        function createAudioElement(audioUrl) {
+            const chatBox = document.getElementById('chat-box');
+            if (!chatBox) return;
+            
+            const audioContainer = document.createElement('div');
+            // Ensure AI messages (including audio) are styled correctly
+            audioContainer.className = 'ai-message'; 
+            
+            const audioLabel = document.createElement('span');
+            audioLabel.textContent = aiDisplayName + ': ';
+            audioContainer.appendChild(audioLabel);
+
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.autoplay = true;
+            audio.src = audioUrl;
+            audio.style.width = 'calc(100% - 50px)'; // Adjust width if label is present
+            audio.style.verticalAlign = 'middle';
+            // audio.style.marginTop = '10px'; // May not be needed if part of ai-message
+            audio.style.borderRadius = '8px';
+            
+            audioContainer.appendChild(audio);
+            chatBox.appendChild(audioContainer);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
 
         function showSection(id) {
             document.querySelectorAll('.section').forEach(sec => sec.style.display = 'none');
@@ -301,6 +509,11 @@
                             if (aiMessageDiv) {
                                 aiMessageDiv.innerHTML = aiDisplayName + ': ' + finalFormattedResponse.replace(/\n/g, '<br>');
                             }
+                            
+                            // Convert to audio if voice chat is enabled
+                            if (voiceChatEnabled && fullAiResponse.trim()) {
+                                convertTextToAudio(fullAiResponse);
+                            }
                         }
                         return;
                     }
@@ -418,6 +631,11 @@
                     // Display AI message (or error) from fallback immediately by re-rendering
                     displayChatMessages(); 
                     chatBox.scrollTop = chatBox.scrollHeight; // Scroll after AI message
+
+                    // Convert to audio if voice chat is enabled (for fallback)
+                    if (voiceChatEnabled && aiReplyText && aiReplyText.trim() !== "") {
+                        convertTextToAudio(aiReplyText);
+                    }
 
                     // Analyze AI message AFTER it's been displayed
                     if (aiReplyText && aiReplyText.trim() !== "") { 
@@ -634,6 +852,10 @@
                         } else if (existingAiMsg.content !== accumulatedAiMessageContent && !existingAiMsg.content.startsWith("Error:")) {
                             // Update existing message if content differs and it's not an error
                             existingAiMsg.content = accumulatedAiMessageContent;
+                        }
+                        // Convert to audio if voice chat is enabled for new chat's first message
+                        if (voiceChatEnabled && accumulatedAiMessageContent.trim()) {
+                            convertTextToAudio(accumulatedAiMessageContent);
                         }
                     }
                     return;
@@ -1160,6 +1382,23 @@
                         sendMessage();
                     }
                 });
+            }
+
+            // Ensure voice input elements are always visible by default
+            const voiceInputButton = document.getElementById('voice-input-btn');
+            const recordingStatusDiv = document.getElementById('recording-status');
+            if (voiceInputButton) {
+                voiceInputButton.style.display = 'flex'; // Or 'inline-flex' or 'block' depending on desired layout
+                 voiceInputButton.addEventListener('click', () => {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        stopRecording();
+                    } else {
+                        startRecording();
+                    }
+                });
+            }
+            if (recordingStatusDiv) {
+                recordingStatusDiv.style.display = 'block'; // Or 'flex'
             }
         });
     </script>

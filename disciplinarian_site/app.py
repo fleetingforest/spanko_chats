@@ -1,18 +1,20 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, stream_with_context, Response
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response, stream_with_context, flash
 import firebase_admin
-from firebase_admin import credentials, firestore, storage # Removed auth
-from openai import OpenAI as FireworksOpenAI # Renamed to avoid conflict if another OpenAI client is used
+from firebase_admin import credentials, firestore, storage
+from openai import OpenAI as FireworksOpenAI
 import os
+import uuid
+import re
+import requests
+import json
+import time
+import sys
 from datetime import datetime, timezone
-import uuid # For generating unique chat IDs
 from passlib.hash import pbkdf2_sha256
-import re # Added import for regular expressions
-import requests # For DeepInfra API call
-import json # Add json if not already imported
-from flask import stream_with_context # Add stream_with_context
-import time # Added for token rate limiting
-from werkzeug.utils import secure_filename # For securing filenames
-import uuid # ensure uuid is imported, it is used for chat IDs and now for unique filenames
+from werkzeug.utils import secure_filename
+import traceback # Add this import
+import httpx # Add httpx for OpenAI TTS
+from cryptography.fernet import Fernet
 
 app = Flask(__name__)
 app.secret_key = os.getenv("DISCIPLINE_SECRET", "discipline-secret-key")
@@ -34,6 +36,16 @@ DEEPINFRA_API_KEY = os.environ.get("DEEPINFRA_API_KEY")
 # User should verify/set this to the specific "Deepseek R1 05-28" model identifier on DeepInfra.
 # Using a common Deepseek model as a placeholder.
 DEEPINFRA_MODEL_NAME = os.environ.get("DEEPINFRA_MODEL_NAME", "deepseek-ai/DeepSeek-R1-Turbo")
+
+# Configuration for OpenAI TTS
+OPENAI_API_KEY_TTS = os.getenv("OPENAI_API_KEY") # Ensure this environment variable is set
+API_URL_TTS = "https://api.openai.com/v1/audio/speech"
+PERSONA_VOICES = {
+    "default_ai": "nova",  # Example voice for the disciplinarian AI
+    # Add other personas if needed, or use a fixed voice
+}
+TTS_MODEL = "tts-1" # Standard OpenAI TTS model
+TTS_RESPONSE_FORMAT = "aac" # AAC is a good format for streaming
 
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'md', 'py', 'js', 'html', 'css', 'json', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'log'}
 
@@ -345,7 +357,6 @@ def upload_file_to_chat():
             # A simple solution for now if chat_id is missing, is to generate one,
             # but this might lead to orphaned files if the chat isn't saved.
             # A better approach is to ensure chat_id is always available.
-            # For this iteration, let's make it a requirement or use a default.
             # For robustness, let's use a temporary ID if none is found, but log a warning.
             chat_id = session.get('active_chat_id')
             if not chat_id:
@@ -857,7 +868,6 @@ def chat():
         except Exception as e:
             app.logger.error(f"Error during AI stream for chat {active_chat_id}: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-            # AI message was not added, but user message is already in active_conversation_obj['messages']
         finally:
             # Save the state of active_conversation_obj['messages']
             # This will include user message, and AI message if successful.
@@ -1528,6 +1538,207 @@ def strip_think_tags(text):
     
     # If no </think> tag found, return original text
     return text
+
+# Modified helper function for OpenAI TTS (synchronous)
+def _convert_text_to_speech_openai_stream(text: str, voice_id: str = PERSONA_VOICES["default_ai"], model: str = TTS_MODEL, response_format: str = TTS_RESPONSE_FORMAT):
+    if not OPENAI_API_KEY_TTS:
+        app.logger.error("OpenAI API key for TTS is not configured.")
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY_TTS}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "input": text,
+        "voice": voice_id,
+        "response_format": response_format,
+        "speed": 1.0
+    }
+    try:
+        # Using requests for synchronous streaming
+        response = requests.post(API_URL_TTS, headers=headers, json=payload, timeout=60, stream=True)
+        response.raise_for_status()  # Will raise an exception for 4XX/5XX statuses
+        return response # Return the full response object to stream its content
+    except requests.exceptions.HTTPError as e:
+        app.logger.error(f"OpenAI TTS API request failed with status {e.response.status_code}: {e.response.text}")
+        return None
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"OpenAI TTS API request failed: {e}")
+        return None
+    except Exception as e:
+        app.logger.error(f"Unexpected error in OpenAI TTS call: {e}")
+        return None
+
+@app.route("/convert_to_audio", methods=["POST"])
+def convert_to_audio_route(): # Changed to synchronous
+    if 'user_email' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json() # No await for synchronous route
+    text_to_convert = data.get("text")
+
+    if not text_to_convert:
+        return jsonify({"error": "No text provided for audio conversion"}), 400
+
+    if not OPENAI_API_KEY_TTS:
+        return jsonify({"error": "TTS service not configured"}), 503
+
+    stream_id = str(uuid.uuid4())
+    session[f'tts_stream_{stream_id}'] = {
+        'text': text_to_convert,
+        'voice_id': PERSONA_VOICES.get("default_ai", "nova"), # Use default voice
+        'created_at': time.time()
+    }
+    
+    audio_url = url_for('stream_tts_audio', stream_id=stream_id, _external=False) # Use relative URL
+    app.logger.info(f"Generated audio URL for stream {stream_id}: {audio_url}")
+    return jsonify({"audio_url": audio_url})
+
+@app.route("/stream_tts_audio/<stream_id>")
+def stream_tts_audio(stream_id): # Changed to synchronous
+    stream_key = f'tts_stream_{stream_id}'
+    stream_data = session.get(stream_key)
+
+    if not stream_data:
+        app.logger.warn(f"TTS stream data not found for ID: {stream_id}")
+        return jsonify({"error": "Audio stream not found or expired"}), 404
+
+    # Optional: Check for expiration (e.g., 5 minutes)
+    if time.time() - stream_data.get('created_at', 0) > 300:
+        session.pop(stream_key, None)
+        app.logger.warn(f"TTS stream expired for ID: {stream_id}")
+        return jsonify({"error": "Audio stream expired"}), 410
+
+    text = stream_data['text']
+    voice_id = stream_data['voice_id']
+    
+    app.logger.info(f"Streaming TTS for ID: {stream_id}, Text: '{text[:50]}...'")
+
+    openai_response = _convert_text_to_speech_openai_stream(text, voice_id) # Synchronous call
+
+    if openai_response is None:
+        session.pop(stream_key, None) # Clean up session on failure
+        return jsonify({"error": "Failed to generate audio from provider"}), 502
+
+    def generate_audio_chunks(): # Changed to synchronous generator
+        try:
+            for chunk in openai_response.iter_content(chunk_size=8192): # Use iter_content for requests
+                if chunk: # filter out keep-alive new chunks
+                    yield chunk
+        except Exception as e:
+            app.logger.error(f"Error streaming audio bytes for {stream_id}: {e}")
+        finally:
+            if openai_response:
+                openai_response.close() # Close the requests response
+            session.pop(stream_key, None) # Clean up session after streaming
+            app.logger.info(f"Finished streaming and cleaned session for TTS ID: {stream_id}")
+            
+    content_type_map = {
+        "mp3": "audio/mpeg",
+        "opus": "audio/opus",
+        "aac": "audio/aac",
+        "flac": "audio/flac",
+        "wav": "audio/wav",
+        "pcm": "audio/L16; rate=24000; channels=1" # Example for PCM
+    }
+    
+    return Response(generate_audio_chunks(), mimetype=content_type_map.get(TTS_RESPONSE_FORMAT, "audio/aac"))
+
+
+@app.route("/transcribe_audio", methods=["POST"])
+def transcribe_audio():
+    """Transcribe audio using Fireworks AI speech-to-text"""
+    if not fireworks_client:
+        app.logger.error("Fireworks client not available for transcription.")
+        return jsonify({"error": "Transcription service not configured."}), 503
+
+    if 'audio' not in request.files:
+        app.logger.warn("No audio file provided in request to /transcribe_audio.")
+        return jsonify({"error": "No audio file provided"}), 400
+    
+    audio_file = request.files['audio']
+    if audio_file.filename == '':
+        app.logger.warn("Audio file provided with no filename to /transcribe_audio.")
+        return jsonify({"error": "No selected file"}), 400
+
+    temp_audio_path = "" # Initialize to ensure it's defined for the finally block
+    try:
+        # Save the temporary audio file
+        temp_audio_path = f"temp_audio_{uuid.uuid4().hex}.webm" # Use .hex for cleaner filename
+        audio_file.save(temp_audio_path)
+        
+        file_size = os.path.getsize(temp_audio_path)
+        app.logger.info(f"Attempting to transcribe audio file: {temp_audio_path}, size: {file_size} bytes")
+        
+        # Use Fireworks AI Whisper model to transcribe the audio
+        with open(temp_audio_path, "rb") as audio:
+            transcription_response = fireworks_client.audio.transcriptions.create(
+                model="whisper-v3", # Ensure this model is available/correct for your Fireworks setup
+                file=audio,
+                response_format="text" # Request plain text directly
+            )
+        
+        # The response for "text" format is directly the string
+        transcribed_text = transcription_response if isinstance(transcription_response, str) else ""
+
+        if not transcribed_text and isinstance(transcription_response, (dict, object)): # Fallback if API changes
+            # Try to access common text attributes if the response format was not plain text
+            current_value_from_attr = getattr(transcription_response, 'text', '')
+            if current_value_from_attr: # If getattr found something non-empty
+                transcribed_text = current_value_from_attr
+            elif isinstance(transcription_response, dict): # If getattr yielded empty, and it's a dict, try .get()
+                transcribed_text = transcription_response.get('text', '')
+            # If it's an object (like a string that was empty) but not a dict, 
+            # and getattr yielded empty, transcribed_text remains as it was (e.g., "").
+
+        app.logger.info(f"Transcription successful: {transcribed_text[:100]}...")
+        
+        return jsonify({
+            "text": transcribed_text,
+            "status": "success"
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error transcribing audio with Fireworks: {str(e)}")
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": f"Transcription failed: {str(e)}"}), 500
+    finally:
+        # Clean up temporary file if it exists
+        if temp_audio_path and os.path.exists(temp_audio_path):
+            try:
+                os.remove(temp_audio_path)
+                app.logger.info(f"Temporary audio file {temp_audio_path} deleted.")
+            except Exception as e_remove:
+                app.logger.error(f"Error deleting temporary audio file {temp_audio_path}: {e_remove}")
+
+def initialize_services():
+    global fireworks_client, fernet_key
+    # Initialize Firestore and Firebase Storage
+    try:
+        cred = credentials.Certificate(cred_path)
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred, {
+                'storageBucket': 'spanking-chat.firebasestorage.app'
+            })
+        db = firestore.client()
+        bucket = storage.bucket() # bucket is used by other parts of the app, so initialize it
+    except Exception as e:
+        app.logger.error(f"Failed to initialize Firebase: {e}. Running without Firebase.")
+        # The app will proceed without db, and functions using db will need to handle db being None
+        # or raise errors. For this specific request, we aim to use the main DB.
+        # If Firebase is critical, the app should ideally not run or have a more robust error handling.
+
+    # Check and warn if critical environment variables are not set
+    if not fireworks_api_key:
+        app.logger.warning("FIREWORKS_API_KEY not found. AI chat functionality will be disabled.")
+    if not DEEPINFRA_API_KEY:
+        app.logger.warning("DEEPINFRA_API_KEY not found. Some features may not work.")
+    if not OPENAI_API_KEY_TTS:
+        app.logger.warning("OPENAI_API_KEY for TTS is not set. Voice output will not work.")
+
+initialize_services()
 
 if __name__ == '__main__':
     app.run(debug=True)

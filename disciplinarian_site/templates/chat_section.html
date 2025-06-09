@@ -1,7 +1,12 @@
 <div class="chat-container"> <!-- Use a class for styling consistency -->
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <!-- Removed h2 id="chat-title" element -->
-        <button onclick="startNewChat()" style="margin-bottom: 10px;">New Chat</button>
+        <div>
+            <button onclick="startNewChat()" style="margin-bottom: 10px;">New Chat</button>
+            <button id="voice-toggle-btn" onclick="toggleVoiceChat()" style="margin-bottom: 10px; margin-left: 10px;" title="Toggle Voice Chat">
+                <span id="voice-toggle-icon">🎤</span> <span id="voice-toggle-text">Voice Chat</span>
+            </button>
+        </div>
     </div>
     <div id="chat-box">
         <!-- Messages will be dynamically added here by JavaScript -->
@@ -11,6 +16,16 @@
         <input type="file" id="file-upload-input" style="display: none;" onchange="handleFileSelected()">
         <button id="file-upload-button" onclick="document.getElementById('file-upload-input').click()" title="Attach File">📎</button>
         <span id="selected-filename" style="font-size: 0.8em; margin-left: 5px; display: none;"></span>
+        <button id="voice-input-btn" class="mic-button" title="Record Voice">
+            <div class="mic-icon">🎤</div>
+            <div class="recording-indicator"></div>
+        </button>
         <button onclick="sendMessage()">Send</button>
+    </div>
+    
+    <!-- Voice Recording Status -->
+    <div id="recording-status" class="recording-status">
+        <span id="recording-text">Click the microphone to start recording</span>
+        <div id="recording-time" class="recording-time">00:00</div>
     </div>
 </div>
