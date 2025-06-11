@@ -60,7 +60,7 @@ function createAudioElement(audioUrl, container) {
     let audioDiv = document.createElement("div");
     audioDiv.className = "ai-message";
     let audioControl = document.createElement("audio");
-    audioControl.controls = true;
+    audioControl.controls = false;       // hide controls
     audioControl.autoplay = true;
     audioControl.src = audioUrl;
     
@@ -71,6 +71,12 @@ function createAudioElement(audioUrl, container) {
         audioControl.muted = false;
         audioControl.play().catch(e => console.log("Autoplay prevented by browser:", e));
     }, 100);
+    // Start a new recording when playback completes
+    audioControl.addEventListener("ended", () => {
+        if (window.autoRecordAfterResponse) {
+            window.autoRecordAfterResponse();
+        }
+    });
     
     audioDiv.appendChild(audioControl);
     container.appendChild(audioDiv);
