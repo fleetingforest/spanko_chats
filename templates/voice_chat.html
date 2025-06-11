@@ -267,6 +267,10 @@
                     recordingText.textContent = 'Transcribing...';
                 }
             }
+            // Expose recording controls globally
+            window.startRecording = startRecording;
+            window.stopRecording = stopRecording;
+            window.autoRecordAfterResponse = () => startRecording();
             
             function transcribeAudio(audioBlob) {
                 const formData = new FormData();
