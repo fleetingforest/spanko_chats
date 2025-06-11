@@ -203,6 +203,11 @@
             let audioChunks = [];
             let recordingTimer;
             let recordingSeconds = 0;
+            let audioContext;
+            let analyser;
+            let silenceStart = null;
+            const SILENCE_THRESHOLD = 0.02; // normalized amplitude
+            const MAX_SILENCE = 1500; // ms of silence before auto-stop
             const voiceButton = document.getElementById('voice-input-btn');
             const recordingStatus = document.getElementById('recording-status');
             const recordingText = document.getElementById('recording-text');
@@ -224,6 +229,39 @@
                     .then(stream => {
                         mediaRecorder = new MediaRecorder(stream);
                         audioChunks = [];
+
+                        const AC = window.AudioContext || window.webkitAudioContext;
+                        audioContext = new AC();
+                        analyser = audioContext.createAnalyser();
+                        const source = audioContext.createMediaStreamSource(stream);
+                        source.connect(analyser);
+                        analyser.fftSize = 2048;
+                        const dataArray = new Uint8Array(analyser.fftSize);
+
+                        const monitorSilence = () => {
+                            analyser.getByteTimeDomainData(dataArray);
+                            let max = 0;
+                            for (let i = 0; i < dataArray.length; i++) {
+                                max = Math.max(max, Math.abs(dataArray[i] - 128));
+                            }
+                            const amplitude = max / 128;
+                            if (amplitude < SILENCE_THRESHOLD) {
+                                if (!silenceStart) {
+                                    silenceStart = Date.now();
+                                } else if (Date.now() - silenceStart > MAX_SILENCE) {
+                                    stopRecording();
+                                    return;
+                                }
+                            } else {
+                                silenceStart = null;
+                            }
+
+                            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                                requestAnimationFrame(monitorSilence);
+                            }
+                        };
+
+                        requestAnimationFrame(monitorSilence);
                         
                         mediaRecorder.ondataavailable = event => {
                             audioChunks.push(event.data);
@@ -238,7 +276,7 @@
                         mediaRecorder.start();
                         voiceButton.classList.add('recording');
                         recordingStatus.classList.add('active');
-                        recordingText.textContent = 'Recording... Click the mic to stop';
+                        recordingText.textContent = 'Recording... speak now';
                         
                         // Start the timer
                         recordingSeconds = 0;
@@ -254,13 +292,21 @@
             function stopRecording() {
                 if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                     mediaRecorder.stop();
-                    
+
                     // Stop all audio tracks to release the microphone
                     mediaRecorder.stream.getTracks().forEach(track => track.stop());
-                    
+
                     // Clear the timer
                     clearInterval(recordingTimer);
-                    
+
+                    if (audioContext) {
+                        audioContext.close();
+                        audioContext = null;
+                        analyser = null;
+                    }
+
+                    silenceStart = null;
+
                     // Update UI
                     voiceButton.classList.remove('recording');
                     recordingStatus.classList.remove('active');
